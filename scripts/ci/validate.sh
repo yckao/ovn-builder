@@ -17,6 +17,7 @@ jq -e '
 
 jq -e '
   .schema == "io.ovn-builder.release-lock.v1" and
+  (.release_revision | test("^r[1-9][0-9]*$")) and
   .sources.ovs.version == "3.7.1" and
   .sources.ovs.commit == "7921d9c6924b8934ea1de9481891ac1172649280" and
   .sources.ovn.version == "26.03.2" and
@@ -42,9 +43,25 @@ jq -e --slurpfile release release-lock.json '
   ([.cells[].id] | unique | length) == 4 and
   ([.cells[].product] | unique | sort) == ["ovn", "ovs"] and
   ([.cells[].ubuntu] | unique | sort) == ["22.04", "24.04"] and
+  all(.cells[];
+    . as $cell |
+    .alias_tag == (.release_tag | sub("-" + $release[0].release_revision + "-"; "-")) and
+    all((.release_tag, .alias_tag);
+      endswith("-ubuntu" + $cell.ubuntu + "-amd64") and
+      test("^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$") and
+      ((contains("kernel-unverified")) | not))) and
+  ([.cells[] | .product as $product | (.release_tag, .alias_tag) | $product + ":" + .] | unique | length) == 8 and
   (.builders | length) == 2 and
   ([.builders[].id] | unique | length) == 2 and
   ([.builders[].ubuntu] | sort) == ["22.04", "24.04"] and
+  all(.builders[];
+    . as $builder |
+    .alias_tag == (.release_tag | sub("-" + $release[0].release_revision + "-"; "-")) and
+    all((.release_tag, .alias_tag);
+      endswith("-ubuntu" + $builder.ubuntu + "-amd64") and
+      test("^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$") and
+      ((contains("kernel-unverified")) | not))) and
+  ([.builders[] | (.release_tag, .alias_tag)] | unique | length) == 4 and
   (.kernels | length) == 2 and
   all(.kernels[];
     .ubuntu as $ubuntu |
@@ -58,6 +75,8 @@ while IFS= read -r script; do
 done < <(find scripts -type f -name '*.sh' ! -path 'scripts/apt/*' ! -path 'scripts/runtime/policy-rc.d' | sort)
 sh -n scripts/apt/configure-snapshot.sh
 sh -n scripts/runtime/policy-rc.d
+
+./scripts/ci/test-publication-tag-contract.sh
 
 if command -v docker >/dev/null && docker buildx version >/dev/null 2>&1; then
     docker buildx bake --print \

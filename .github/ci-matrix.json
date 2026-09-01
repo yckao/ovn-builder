@@ -10,6 +10,7 @@
       "runtime_target": "runtime-ovs-u2204",
       "images_target": "images-ovs-u2204",
       "release_tag": "3.7.1-r1-ubuntu22.04-amd64",
+      "alias_tag": "3.7.1-ubuntu22.04-amd64",
       "carrier_image": "local/ovn-builder/ovs-debs:3.7.1-r1-ubuntu22.04-amd64",
       "runtime_image": "local/ovn-builder/ovs:3.7.1-r1-ubuntu22.04-amd64"
     },
@@ -23,6 +24,7 @@
       "runtime_target": "runtime-ovs-u2404",
       "images_target": "images-ovs-u2404",
       "release_tag": "3.7.1-r1-ubuntu24.04-amd64",
+      "alias_tag": "3.7.1-ubuntu24.04-amd64",
       "carrier_image": "local/ovn-builder/ovs-debs:3.7.1-r1-ubuntu24.04-amd64",
       "runtime_image": "local/ovn-builder/ovs:3.7.1-r1-ubuntu24.04-amd64"
     },
@@ -36,6 +38,7 @@
       "runtime_target": "runtime-ovn-u2204",
       "images_target": "images-ovn-u2204",
       "release_tag": "26.03.2-ovs3.7.1-r1-ubuntu22.04-amd64",
+      "alias_tag": "26.03.2-ovs3.7.1-ubuntu22.04-amd64",
       "carrier_image": "local/ovn-builder/ovn-debs:26.03.2-ovs3.7.1-r1-ubuntu22.04-amd64",
       "runtime_image": "local/ovn-builder/ovn:26.03.2-ovs3.7.1-r1-ubuntu22.04-amd64"
     },
@@ -49,6 +52,7 @@
       "runtime_target": "runtime-ovn-u2404",
       "images_target": "images-ovn-u2404",
       "release_tag": "26.03.2-ovs3.7.1-r1-ubuntu24.04-amd64",
+      "alias_tag": "26.03.2-ovs3.7.1-ubuntu24.04-amd64",
       "carrier_image": "local/ovn-builder/ovn-debs:26.03.2-ovs3.7.1-r1-ubuntu24.04-amd64",
       "runtime_image": "local/ovn-builder/ovn:26.03.2-ovs3.7.1-r1-ubuntu24.04-amd64"
     }
@@ -60,6 +64,7 @@
       "ubuntu": "22.04",
       "builder_target": "builder-u2204",
       "release_tag": "ovn26.03.2-ovs3.7.1-r1-ubuntu22.04-amd64",
+      "alias_tag": "ovn26.03.2-ovs3.7.1-ubuntu22.04-amd64",
       "builder_image": "local/ovn-builder/builder:ovn26.03.2-ovs3.7.1-r1-ubuntu22.04-amd64"
     },
     {
@@ -68,6 +73,7 @@
       "ubuntu": "24.04",
       "builder_target": "builder-u2404",
       "release_tag": "ovn26.03.2-ovs3.7.1-r1-ubuntu24.04-amd64",
+      "alias_tag": "ovn26.03.2-ovs3.7.1-ubuntu24.04-amd64",
       "builder_image": "local/ovn-builder/builder:ovn26.03.2-ovs3.7.1-r1-ubuntu24.04-amd64"
     }
   ],

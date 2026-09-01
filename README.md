@@ -13,6 +13,9 @@ The conventional carrier is the primary air-gap transport. It is a normal
 Docker image, so an environment that permits Docker images but not arbitrary
 OCI artifacts can load it and copy the packages out. See
 [the air-gap guide](docs/airgap.md) for the complete transfer procedure.
+See [the usage guide](docs/usage.md) for pull, digest pinning, DEB extraction,
+runtime, builder, ORAS, and Docker save/load examples for every published
+repository.
 
 ## Version 1 scope
 
@@ -316,16 +319,16 @@ mutation if it finds an existing OVN integration bridge or OVN external IDs.
 builds per product cell, uploads all eight bundles, and runs four byte-for-byte
 comparison jobs.
 
-When exact-kernel runners are unavailable, dispatch `Publish build-only
-(kernel unverified)` from the same `main` commit and supply a manual
+When exact-kernel runners are unavailable, dispatch `Publish build-only` from
+the same `main` commit and supply a manual
 `Build and test` run ID produced with `kernel_tests=false` plus the matching
 `Reproducibility` run ID. It verifies the seven build jobs, exact six CI
 artifacts, all thirteen reproducibility jobs, and exact eight reproducibility
 artifacts. Publication uses the same two-phase digest protocol as a verified
-release, but every canonical tag contains
-`-kernel-unverified-<40-character-github-sha>` and its release metadata and OCI
-bundle annotation record `kernel_validation=unverified`. These are reproducible
-build outputs targeting the selected kernels, not kernel-tested releases.
+release. Its release-set metadata records `kernel_validation=unverified`; the
+validation state is deliberately not encoded in registry tags. These are
+reproducible build outputs targeting the selected kernels, not kernel-tested
+releases.
 
 For a kernel-verified publication, dispatch `Publish release` from the same
 `main` commit and supply both prerequisite run IDs:
@@ -351,41 +354,69 @@ reproducibility run, proves that the CI `workdir` is byte-for-byte identical to
 that replica, checks transfer hashes, and smoke-tests the loaded images before
 registry login. Builder jobs perform the corresponding transfer and image
 checks. The jobs then push only run-specific `_staging-<release-run-id>-...`
-tags and upload metadata containing the 14 staged manifest digests. A single
-promotion job starts only after all six staging jobs succeed, validates the
-complete metadata/reference contract, and records it as `release-set.v1.json`.
+tags and upload metadata containing the 14 staged manifest digests and their
+exact and version-alias references. A single promotion job starts only after
+all six staging jobs succeed, validates the complete metadata/reference
+contract, and records it as `release-set.v2.json`. The release set also records
+`kernel_validation=verified` or `kernel_validation=unverified` as appropriate.
 
-Before writing any canonical tag, promotion resolves every staging digest and
-preflights the complete canonical set. An existing canonical tag is accepted
-only when its digest is identical; a different digest aborts the release.
-Missing canonical tags are created registry-side from the staged digest, so
-the tested images are neither rebuilt nor pulled and repushed. Each missing
-tag is rechecked immediately before it is written; a tag that appeared after
-the full-set preflight is again accepted only at the expected digest. The builder,
-carrier, and runtime images are conventional Docker images. The verified
-`workdir` is additionally staged and promoted with ORAS, but that OCI artifact
-is optional and is not needed by the Docker-only air-gap workflow.
+Before writing any release tag, promotion resolves every staging digest and
+preflights the complete tag set. An existing exact tag is accepted only when
+its digest is identical; a different digest aborts the release. Exact tags are
+created registry-side from the staged digest, while the corresponding
+revision-less version aliases are controlled moving pointers. The tested
+images are neither rebuilt nor pulled and repushed. The builder, carrier, and
+runtime images are conventional Docker images. The verified `workdir` is
+additionally staged and promoted with ORAS, but that OCI artifact is optional
+and is not needed by the Docker-only air-gap workflow.
 
 OCI Distribution does not provide a transaction spanning these repositories,
 so the final tag writes cannot be literally atomic. A registry or network
-failure during promotion can leave a prefix of canonical tags present. Treat a
+failure during promotion can leave a prefix of release tags present. Treat a
 release as complete only when the `promote` job succeeds; its final pass
-resolves all 14 canonical tags. Promotion is retry-safe: identical tags are
-kept, missing tags are filled in, and any conflicting digest is rejected.
+resolves both tags for all 14 staged digests. Promotion is retry-safe:
+identical exact tags are kept, missing exact tags are filled in, version aliases
+are set to the expected digest, and any conflicting immutable tag is rejected.
 The registry has no conditional multi-tag commit, so repository permissions,
 the workflow concurrency lock, and the protected release environment must also
 exclude an out-of-band publisher during the short check/write interval.
 Run-specific staging tags are retained for audit/recovery and may be garbage
-collected only after the canonical set has been independently verified.
+collected only after the complete tag set has been independently verified.
 
-Verified canonical tags have the form
-`<version-release-ubuntu-arch>-<40-character-github-sha>`. Build-only canonical
-tags have the form
-`<version-release-ubuntu-arch>-kernel-unverified-<40-character-github-sha>`.
-The canonical prefix is fixed to
+Every published digest receives two concise tags. The exact tag includes the
+packaging revision and is immutable; the version alias omits that revision and
+may move to a later packaging revision of the same upstream versions:
+
+```text
+# OVS runtime, DEB carrier, and OCI bundle
+3.7.1-r1-ubuntu24.04-amd64
+3.7.1-ubuntu24.04-amd64
+
+# OVN runtime, DEB carrier, and OCI bundle
+26.03.2-ovs3.7.1-r1-ubuntu24.04-amd64
+26.03.2-ovs3.7.1-ubuntu24.04-amd64
+
+# Builder
+ovn26.03.2-ovs3.7.1-r1-ubuntu24.04-amd64
+ovn26.03.2-ovs3.7.1-ubuntu24.04-amd64
+```
+
+Ubuntu 22.04 uses the corresponding `ubuntu22.04` forms. The publication
+prefix is fixed to
 `ghcr.io/<lowercase-repository-owner>/ovn-builder`; workflow inputs cannot
-redirect publication to another registry namespace. No fixed or floating
-`latest` tag is published. Third-party Actions remain pinned to full commit
-SHAs. Keep the `build-only-publication`, `kernel-validation`, and `release`
-environments protected, and provision any future exact-kernel runners as
-single-use machines.
+redirect publication to another registry namespace. The manifest digest is
+the authoritative registry identity. Use the immutable exact tag plus its
+digest for release and air-gap records; the moving alias is a convenience and
+must not be used for approval. No `latest` tag is published. The full source
+commit remains in release metadata, image labels, and OCI annotations. Third-party Actions
+remain pinned to full commit SHAs. Keep the `build-only-publication`,
+`kernel-validation`, and `release` environments protected, and provision any
+future exact-kernel runners as single-use machines.
+
+Build-only and kernel-verified publication normally come from separate CI
+runs. If an exact tag was already published and a later verified run produces
+a different image digest, promotion stops instead of replacing it. Increment
+the packaging revision (`r1` to `r2`) for that verified image set; the
+revision-less aliases can then move to the new digests.
+Promotion also confirms that its source commit is still the protected `main`
+head, preventing a rerun of an older workflow from rolling aliases backward.

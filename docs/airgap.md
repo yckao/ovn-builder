@@ -60,6 +60,12 @@ the published registry digest when applicable, the image ID after loading, the
 release-lock digest recorded in the bundle manifest, and the checksum of the
 exact transfer archive.
 
+Registry publication also assigns a revision-less version alias, for example
+`3.7.1-ubuntu24.04-amd64`, to the same digest. That alias may move to a later
+packaging revision. Use the immutable exact tag containing `r1` and the
+manifest digest for an air-gap approval; never approve or transfer by the
+moving alias alone.
+
 Do not combine package sets for different OVS versions under one tag or in one
 offline APT repository. Do not use `latest` for an approved transfer.
 
@@ -300,8 +306,10 @@ version and bypass the intended OVN/OVS compatibility pairing.
 The carrier's `io.ovn-builder.target-kernel` label and the manifest's
 `expected_kernel` field describe the intended compatibility target. They are
 static build metadata, not evidence that the kernel was booted, and they do not
-cause that kernel to run inside the carrier. A registry tag containing
-`kernel-unverified` explicitly identifies a build-only publication.
+cause that kernel to run inside the carrier. Registry tags describe build
+identity only. The associated release-set metadata records
+`kernel_validation=verified` or `kernel_validation=unverified`; retain that
+metadata and its CI evidence with the pinned digest.
 
 Containers share the Docker host's kernel. Loading `openvswitch`, validating
 its vermagic, and exercising datapath operations therefore require a VM or
@@ -336,8 +344,9 @@ The release pipeline checks these distinct layers:
 | Carrier behavior | labels, non-root user, no volume, read-only/no-network checksum run, stopped-container extraction |
 | Transfer | SHA-256 of the exact `docker save` archive before `docker load` |
 | Runtime image | installed binary version smoke test |
-| Kernel | separate VM/self-hosted test on the exact `uname -r` value |
+| Kernel | release-set `kernel_validation` plus the separate VM/self-hosted test on the exact `uname -r` value |
 | Reproducibility | two no-cache builds with byte-for-byte bundle comparison |
 
 Keep all of those records with an air-gap approval. No single tag, checksum, or
-container smoke test replaces the other layers.
+container smoke test replaces the other layers. In particular, do not use a
+moving version alias as an approval identity.

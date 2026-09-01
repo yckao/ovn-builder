@@ -137,13 +137,13 @@ jobs:
           PRODUCT: ${{ matrix.product }}
           LOCAL_CARRIER: ${{ matrix.carrier_image }}
           LOCAL_RUNTIME: ${{ matrix.runtime_image }}
-          VERSION_TAG: ${{ matrix.release_tag }}
+          EXACT_TAG: ${{ matrix.release_tag }}
+          ALIAS_TAG: ${{ matrix.alias_tag }}
           RELEASE_SHA: ${{ github.sha }}
           OCI_SOURCE: https://github.com/${{ github.repository }}
-          KERNEL_VALIDATION: verified
+          OCI_REVISION: ${{ github.sha }}
         run: |
           stage_tag="_staging-$GITHUB_RUN_ID-$CELL_ID"
-          canonical_tag="$VERSION_TAG-$RELEASE_SHA"
           carrier_stage="$IMAGE_PREFIX/$PRODUCT-debs:$stage_tag"
           runtime_stage="$IMAGE_PREFIX/$PRODUCT:$stage_tag"
           oci_stage="$IMAGE_PREFIX/$PRODUCT-debs-oci:$stage_tag"
@@ -162,6 +162,19 @@ jobs:
           [[ $runtime_digest =~ $digest_pattern ]]
           [[ $oci_digest =~ $digest_pattern ]]
 
+          carrier_refs=$(jq -cnS --arg repository "$IMAGE_PREFIX/$PRODUCT-debs" \
+            --arg exact "$EXACT_TAG" --arg alias "$ALIAS_TAG" \
+            '[{policy:"immutable", ref:($repository + ":" + $exact)},
+              {policy:"moving", ref:($repository + ":" + $alias)}] | sort_by(.ref)')
+          runtime_refs=$(jq -cnS --arg repository "$IMAGE_PREFIX/$PRODUCT" \
+            --arg exact "$EXACT_TAG" --arg alias "$ALIAS_TAG" \
+            '[{policy:"immutable", ref:($repository + ":" + $exact)},
+              {policy:"moving", ref:($repository + ":" + $alias)}] | sort_by(.ref)')
+          oci_refs=$(jq -cnS --arg repository "$IMAGE_PREFIX/$PRODUCT-debs-oci" \
+            --arg exact "$EXACT_TAG" --arg alias "$ALIAS_TAG" \
+            '[{policy:"immutable", ref:($repository + ":" + $exact)},
+              {policy:"moving", ref:($repository + ":" + $alias)}] | sort_by(.ref)')
+
           mkdir -p stage-metadata
           jq -nS \
             --arg cell "$CELL_ID" \
@@ -171,15 +184,16 @@ jobs:
             --arg sha "$RELEASE_SHA" \
             --arg repository "$GITHUB_REPOSITORY" \
             --arg carrier_source "$carrier_stage" \
-            --arg carrier_canonical "$IMAGE_PREFIX/$PRODUCT-debs:$canonical_tag" \
+            --argjson carrier_refs "$carrier_refs" \
             --arg carrier_digest "$carrier_digest" \
             --arg runtime_source "$runtime_stage" \
-            --arg runtime_canonical "$IMAGE_PREFIX/$PRODUCT:$canonical_tag" \
+            --argjson runtime_refs "$runtime_refs" \
             --arg runtime_digest "$runtime_digest" \
             --arg oci_source "$oci_stage" \
-            --arg oci_canonical "$IMAGE_PREFIX/$PRODUCT-debs-oci:$canonical_tag" \
+            --argjson oci_refs "$oci_refs" \
             --arg oci_digest "$oci_digest" '{
-              schema: "ovn-builder.release-stage.v1",
+              schema: "ovn-builder.release-stage.v2",
+              kernel_validation: "verified",
               category: "product",
               cell_id: $cell,
               image_prefix: $prefix,
@@ -194,21 +208,21 @@ jobs:
                   cell_id: $cell,
                   kind: "carrier",
                   source_ref: $carrier_source,
-                  canonical_ref: $carrier_canonical,
+                  canonical_refs: $carrier_refs,
                   digest: $carrier_digest
                 },
                 {
                   cell_id: $cell,
                   kind: "runtime",
                   source_ref: $runtime_source,
-                  canonical_ref: $runtime_canonical,
+                  canonical_refs: $runtime_refs,
                   digest: $runtime_digest
                 },
                 {
                   cell_id: $cell,
                   kind: "oci-bundle",
                   source_ref: $oci_source,
-                  canonical_ref: $oci_canonical,
+                  canonical_refs: $oci_refs,
                   digest: $oci_digest
                 }
               ]
@@ -277,17 +291,22 @@ jobs:
         env:
           CELL_ID: ${{ matrix.id }}
           LOCAL_BUILDER: ${{ matrix.builder_image }}
-          VERSION_TAG: ${{ matrix.release_tag }}
+          EXACT_TAG: ${{ matrix.release_tag }}
+          ALIAS_TAG: ${{ matrix.alias_tag }}
           RELEASE_SHA: ${{ github.sha }}
         run: |
           stage_tag="_staging-$GITHUB_RUN_ID-builder-$CELL_ID"
-          canonical_tag="$VERSION_TAG-$RELEASE_SHA"
           builder_stage="$IMAGE_PREFIX/builder:$stage_tag"
 
           docker tag "$LOCAL_BUILDER" "$builder_stage"
           docker push "$builder_stage"
           builder_digest=$(oras resolve "$builder_stage")
           [[ $builder_digest =~ ^sha256:[0-9a-f]{64}$ ]]
+
+          builder_refs=$(jq -cnS --arg repository "$IMAGE_PREFIX/builder" \
+            --arg exact "$EXACT_TAG" --arg alias "$ALIAS_TAG" \
+            '[{policy:"immutable", ref:($repository + ":" + $exact)},
+              {policy:"moving", ref:($repository + ":" + $alias)}] | sort_by(.ref)')
 
           mkdir -p stage-metadata
           jq -nS \
@@ -298,9 +317,10 @@ jobs:
             --arg sha "$RELEASE_SHA" \
             --arg repository "$GITHUB_REPOSITORY" \
             --arg source "$builder_stage" \
-            --arg canonical "$IMAGE_PREFIX/builder:$canonical_tag" \
+            --argjson canonical_refs "$builder_refs" \
             --arg digest "$builder_digest" '{
-              schema: "ovn-builder.release-stage.v1",
+              schema: "ovn-builder.release-stage.v2",
+              kernel_validation: "verified",
               category: "builder",
               cell_id: $cell,
               image_prefix: $prefix,
@@ -314,7 +334,7 @@ jobs:
                 cell_id: $cell,
                 kind: "builder",
                 source_ref: $source,
-                canonical_ref: $canonical,
+                canonical_refs: $canonical_refs,
                 digest: $digest
               }]
             }' > "stage-metadata/builder-$CELL_ID.json"
@@ -356,7 +376,7 @@ jobs:
           merge-multiple: true
 
       - name: Validate and collect every staged digest
-        run: ./scripts/release/validate-stage-metadata.sh stage-metadata release-set.v1.json
+        run: ./scripts/release/validate-stage-metadata.sh stage-metadata release-set.v2.json
 
       - uses: oras-project/setup-oras@22ce207df3b08e061f537244349aac6ae1d214f6
         with:
@@ -368,13 +388,21 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Preflight and promote canonical full-SHA tags
-        run: ./scripts/release/promote-release.sh release-set.v1.json
+      - name: Preflight and promote exact tags and version aliases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          main_sha=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)
+          [[ $main_sha == "$RELEASE_SHA" ]] || {
+            echo "refusing to move aliases from an obsolete main commit" >&2
+            exit 1
+          }
+          ./scripts/release/promote-release.sh release-set.v2.json
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: release-set-${{ github.run_id }}
-          path: release-set.v1.json
+          path: release-set.v2.json
           if-no-files-found: error
           compression-level: 0
           overwrite: true
