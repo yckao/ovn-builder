@@ -29,7 +29,8 @@ expected_kernel=$(jq -r '.target.expected_kernel' "$bundle/manifest.v1.json")
 for image in "$carrier_image" "$runtime_image"; do
     [[ $(docker image inspect -f '{{index .Config.Labels "io.ovn-builder.target-kernel"}}' "$image") == "$expected_kernel" ]] \
         || die "image target-kernel label is wrong: $image"
-    [[ $(docker image inspect -f '{{index .Config.Labels "io.ovn-builder.tested-kernel"}}' "$image") == '<no value>' ]] \
+    docker image inspect "$image" \
+        | jq -e '((.[0].Config.Labels // {}) | has("io.ovn-builder.tested-kernel") | not)' >/dev/null \
         || die "image must not claim a tested kernel: $image"
 done
 if [[ -n ${REPOSITORY_SOURCE:-} ]]; then
