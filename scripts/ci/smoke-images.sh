@@ -67,8 +67,14 @@ cmp "$bundle/SHA256SUMS" "$tmp/SHA256SUMS"
 
 version_output=$(docker run --rm --pull=never --network=none "$runtime_image")
 case "$product" in
-    ovs) grep -F "Open vSwitch 3.7.1" <<< "$version_output" >/dev/null ;;
-    ovn) grep -F "ovn-controller 26.03.2" <<< "$version_output" >/dev/null ;;
+    ovs)
+        grep -F "ovs-vswitchd (Open vSwitch) 3.7.1" <<< "$version_output" >/dev/null \
+            || die "unexpected OVS runtime version output"
+        ;;
+    ovn)
+        grep -F "ovn-controller 26.03.2" <<< "$version_output" >/dev/null \
+            || die "unexpected OVN runtime version output"
+        ;;
     *) die "unsupported product: $product" ;;
 esac
 
