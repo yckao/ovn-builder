@@ -26,7 +26,8 @@ if [[ -n ${REPOSITORY_REVISION:-} ]]; then
     [[ $(docker image inspect -f '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$builder_image") == "$REPOSITORY_REVISION" ]] \
         || die "builder repository revision label is wrong"
 fi
-[[ $(docker image inspect -f '{{index .Config.Labels "io.ovn-builder.tested-kernel"}}' "$builder_image") == '<no value>' ]] \
+docker image inspect "$builder_image" \
+    | jq -e '((.[0].Config.Labels // {}) | has("io.ovn-builder.tested-kernel") | not)' >/dev/null \
     || die "builder must not claim a tested kernel"
 
 docker run --rm --pull=never --network=none --read-only --cap-drop=ALL \
