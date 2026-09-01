@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+IFS=$'\n\t'
+
+die() { printf 'fake-oras: %s\n' "$*" >&2; exit 1; }
+
+: "${FAKE_ORAS_STATE:?FAKE_ORAS_STATE is required}"
+: "${FAKE_ORAS_LOG:?FAKE_ORAS_LOG is required}"
+[[ -f $FAKE_ORAS_STATE ]] || die "state file does not exist: $FAKE_ORAS_STATE"
+command -v jq >/dev/null || die "jq is required"
+
+write_state() {
+    local next=$1
+    mv -- "$next" "$FAKE_ORAS_STATE"
+}
+
+case "${1:-}" in
+    resolve)
+        (($# == 2)) || die "usage: oras resolve REF"
+        ref=$2
+        count=$(jq -r --arg ref "$ref" '(.resolve_counts[$ref] // 0) + 1' "$FAKE_ORAS_STATE")
+        next=$(mktemp "$FAKE_ORAS_STATE.XXXXXX")
+        jq --arg ref "$ref" --argjson count "$count" \
+            '.resolve_counts[$ref] = $count' "$FAKE_ORAS_STATE" > "$next"
+        write_state "$next"
+
+        race_on=${FAKE_ORAS_RACE_ON_RESOLVE:-2}
+        if [[ ${FAKE_ORAS_RACE_REF:-} == "$ref" && $count -eq $race_on ]]; then
+            race_digest=${FAKE_ORAS_RACE_DIGEST:?FAKE_ORAS_RACE_DIGEST is required for a race}
+            [[ $race_digest =~ ^sha256:[0-9a-f]{64}$ ]] || die "invalid race digest"
+            next=$(mktemp "$FAKE_ORAS_STATE.XXXXXX")
+            jq --arg ref "$ref" --arg digest "$race_digest" \
+                '.refs[$ref] = $digest' "$FAKE_ORAS_STATE" > "$next"
+            write_state "$next"
+        fi
+
+        digest=$(jq -r --arg ref "$ref" '.refs[$ref] // empty' "$FAKE_ORAS_STATE")
+        [[ -n $digest ]] || die "reference not found: $ref"
+        printf '%s\n' "$digest"
+        ;;
+    repo)
+        (($# == 5)) || die "usage: oras repo tags REPOSITORY --format json"
+        [[ $2 == tags && $4 == --format && $5 == json ]] \
+            || die "unsupported repo command"
+        repository=$3
+        jq -c --arg prefix "$repository:" '{
+          tags: ([.refs | keys[] | select(startswith($prefix)) | ltrimstr($prefix)] | sort)
+        }' "$FAKE_ORAS_STATE"
+        ;;
+    tag)
+        (($# == 3)) || die "usage: oras tag REPOSITORY@DIGEST TAG"
+        subject=$2
+        tag=$3
+        [[ $subject == *@sha256:* ]] || die "tag subject must be digest-qualified"
+        repository=${subject%@*}
+        digest=${subject##*@}
+        [[ $digest =~ ^sha256:[0-9a-f]{64}$ ]] || die "invalid subject digest"
+        [[ $tag =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]] || die "invalid tag"
+        ref="$repository:$tag"
+
+        next=$(mktemp "$FAKE_ORAS_STATE.XXXXXX")
+        jq --arg ref "$ref" --arg digest "$digest" \
+            '.refs[$ref] = $digest' "$FAKE_ORAS_STATE" > "$next"
+        write_state "$next"
+        printf '%s\t%s\n' "$ref" "$digest" >> "$FAKE_ORAS_LOG"
+        ;;
+    *)
+        die "unsupported command: ${1:-<none>}"
+        ;;
+esac

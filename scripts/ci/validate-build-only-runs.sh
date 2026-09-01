@@ -200,4 +200,4 @@ assert_exact_job_set "$tmp/repro-jobs.json" "$repro_jobs" "thirteen-job reproduc
 assert_artifact_set "$tmp/ci-artifacts.json" "$ci_artifacts" "CI build-only input"
 assert_artifact_set "$tmp/repro-artifacts.json" "$repro_artifacts" "reproducibility evidence"
 
-echo "validated kernel-unverified CI run $ci_run_id and reproducibility run $repro_run_id for $GITHUB_SHA"
+echo "validated build-only CI run $ci_run_id and reproducibility run $repro_run_id for $GITHUB_SHA"

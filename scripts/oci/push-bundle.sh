@@ -13,6 +13,9 @@ command -v oras >/dev/null || { echo "oras is required" >&2; exit 2; }
 "$(dirname -- "$0")/../bundle/verify.sh" "$bundle"
 
 declare -a annotations=()
+# Kernel validation is release evidence, not an input to these package bytes.
+# Keeping it out of this manifest lets build-only and verified publication
+# converge on the same digest; the release-set metadata records the result.
 if [[ -n ${OCI_SOURCE:-} ]]; then
     [[ $OCI_SOURCE =~ ^https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || {
         echo "OCI_SOURCE must identify a GitHub repository" >&2
@@ -20,15 +23,13 @@ if [[ -n ${OCI_SOURCE:-} ]]; then
     }
     annotations+=(--annotation "org.opencontainers.image.source=$OCI_SOURCE")
 fi
-if [[ -n ${KERNEL_VALIDATION:-} ]]; then
-    case $KERNEL_VALIDATION in verified|unverified) ;; *)
-        echo "KERNEL_VALIDATION must be verified or unverified" >&2
+if [[ -n ${OCI_REVISION:-} ]]; then
+    [[ $OCI_REVISION =~ ^[0-9a-f]{40}$ ]] || {
+        echo "OCI_REVISION must be a full lowercase Git commit SHA" >&2
         exit 2
-        ;;
-    esac
-    annotations+=(--annotation "io.ovn-builder.kernel-validation=$KERNEL_VALIDATION")
+    }
+    annotations+=(--annotation "org.opencontainers.image.revision=$OCI_REVISION")
 fi
-
 declare -a layers=()
 while IFS= read -r -d '' path; do
     relative=${path#"$bundle"/}
