@@ -116,7 +116,7 @@ while IFS= read -r path; do
 done < <(find "$bundle" -type f -print | sort)
 while IFS= read -r path; do
     [[ $(stat -c '%a' "$path") == 755 ]] || die "unexpected directory mode: $path"
-done < <(find "$bundle" -type d -print | sort)
+done < <(find "$bundle" -mindepth 1 -type d -print | sort)
 
 printf 'verified %s bundle with %s packages\n' \
     "$(jq -r '.product' "$bundle/manifest.v1.json")" \
