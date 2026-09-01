@@ -1,0 +1,87 @@
+{
+  "schema": "io.ovn-builder.release-lock.v1",
+  "release_revision": "r1",
+  "source_date_epoch": 1781626300,
+  "apt_snapshot": "20260820T000000Z",
+  "architecture": "amd64",
+  "build_jobs": 4,
+  "features": {
+    "dpdk": false,
+    "package_tests": false,
+    "lto": false,
+    "debug_symbols": false
+  },
+  "packaging_patches": [
+    {
+      "path": "patches/ovs/0001-reproducible-source-tar.patch",
+      "sha256": "84ef45be776a10b229da0b4eb27cc3cb53e12ef2a25a6aa8324e2423f733f981",
+      "purpose": "Normalize the embedded openvswitch-source tar created after dh_autoreconf"
+    }
+  ],
+  "sources": {
+    "ovs": {
+      "version": "3.7.1",
+      "tag": "v3.7.1",
+      "tag_object": "219dde96205d1622ac073e8e9de429c4effe4e4e",
+      "commit": "7921d9c6924b8934ea1de9481891ac1172649280",
+      "tree": "f28bf1dc65fcade85809b922a77c60eb612bae8d",
+      "tarball": "https://www.openvswitch.org/releases/openvswitch-3.7.1.tar.gz",
+      "tarball_sha256": "b8936c2e95a024d37123536ca843648bc2f1d2520921f991dd3d06248859b70f"
+    },
+    "ovn": {
+      "version": "26.03.2",
+      "tag": "v26.03.2",
+      "tag_object": "7b134addee556b57b240d7e1eb3439f87a2d1458",
+      "commit": "3facc3b5e99ba2c863ec5f47f37466397f735802",
+      "tree": "6d21fcd1e6d8f2ad4f8c7937bd6897ba68120374",
+      "upstream_ovs_gitlink": "bdb95cc1920d4ab66fe062a9470eeb33a51d33e2",
+      "build_ovs_commit": "7921d9c6924b8934ea1de9481891ac1172649280"
+    }
+  },
+  "ubuntu": {
+    "22.04": {
+      "codename": "jammy",
+      "base_image": "ubuntu:22.04@sha256:2edbbc5dc405e9612ba3584ce95480277e3eb374407b5505fe26f17df77c7dbc",
+      "ca_certificates": {
+        "version": "20260601~22.04.1",
+        "url": "https://snapshot.ubuntu.com/ubuntu/20260820T000000Z/pool/main/c/ca-certificates/ca-certificates_20260601~22.04.1_all.deb",
+        "sha256": "6e8cdcc8c86103acd4fc14649eac62ff2037108389074a7b167567af33c32245"
+      },
+      "kernel": {
+        "policy": "exact-compatibility",
+        "snapshot": "20250130T000000Z",
+        "release": "6.8.0-52-generic",
+        "package_version": "6.8.0-52.53~22.04.1",
+        "packages": [
+          "linux-image-6.8.0-52-generic",
+          "linux-modules-6.8.0-52-generic",
+          "linux-modules-extra-6.8.0-52-generic",
+          "linux-hwe-6.8-headers-6.8.0-52",
+          "linux-headers-6.8.0-52-generic"
+        ]
+      }
+    },
+    "24.04": {
+      "codename": "noble",
+      "base_image": "ubuntu:24.04@sha256:33ceb71981b602c1a7443a53469e4dba065f7503eab3078a2d7a57a2ab987517",
+      "ca_certificates": {
+        "version": "20260601~24.04.1",
+        "url": "https://snapshot.ubuntu.com/ubuntu/20260820T000000Z/pool/main/c/ca-certificates/ca-certificates_20260601~24.04.1_all.deb",
+        "sha256": "6bac2a01979e210d9eac1d4d56747ec709ea60654744d66705dc3c36e7629e50"
+      },
+      "kernel": {
+        "policy": "server-ga-linux-generic",
+        "snapshot": "20260820T000000Z",
+        "release": "6.8.0-138-generic",
+        "package_version": "6.8.0-138.138",
+        "packages": [
+          "linux-image-6.8.0-138-generic",
+          "linux-modules-6.8.0-138-generic",
+          "linux-modules-extra-6.8.0-138-generic",
+          "linux-headers-6.8.0-138",
+          "linux-headers-6.8.0-138-generic"
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,6 @@
+.git
+.github
+dist
+.buildx-cache
+*.docker.tar
+*.docker.tar.sha256

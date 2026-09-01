@@ -1,0 +1,87 @@
+name: Reproducibility
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  SOURCE_DATE_EPOCH: "1781626300"
+  DOCKER_BUILD_RECORD_UPLOAD: "false"
+  REPOSITORY_SOURCE: https://github.com/${{ github.repository }}
+  REPOSITORY_REVISION: ${{ github.sha }}
+
+jobs:
+  plan:
+    name: plan
+    runs-on: ubuntu-24.04
+    outputs:
+      replicas: ${{ steps.matrix.outputs.replicas }}
+      cells: ${{ steps.matrix.outputs.cells }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - id: matrix
+        run: |
+          {
+            echo "replicas=$(jq -c '{include:[.cells[] as $cell | ["a","b"][] as $replica | $cell + {replica:$replica}]}' .github/ci-matrix.json)"
+            echo "cells=$(jq -c '{include:.cells}' .github/ci-matrix.json)"
+          } >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: plan
+    name: reproducibility-build / ${{ matrix.id }} / ${{ matrix.replica }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.replicas) }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
+        with:
+          driver: docker-container
+          version: v0.36.1
+          driver-opts: |
+            image=moby/buildkit:v0.32.2@sha256:28a898719c18a33f4e8000685287fa36fd0dd9560c6440227d3a732d79bb41d8
+      - uses: docker/bake-action@5be5f02ff8819ecd3092ea6b2e6261c31774f2b4
+        with:
+          source: .
+          targets: ${{ matrix.debs_target }}
+          pull: true
+          set: |
+            ${{ matrix.debs_target }}.no-cache=true
+            ${{ matrix.debs_target }}.output=type=local,dest=./repro/${{ matrix.id }}-${{ matrix.replica }}
+      - run: ./scripts/bundle/verify.sh "repro/${{ matrix.id }}-${{ matrix.replica }}"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: repro-${{ matrix.id }}-${{ matrix.replica }}
+          path: repro/${{ matrix.id }}-${{ matrix.replica }}
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+
+  compare:
+    needs: [plan, build]
+    name: compare / ${{ matrix.id }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.cells) }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: repro-${{ matrix.id }}-a
+          path: replica-a
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: repro-${{ matrix.id }}-b
+          path: replica-b
+      - run: ./scripts/ci/compare-bundles.sh replica-a replica-b

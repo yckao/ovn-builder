@@ -1,0 +1,94 @@
+{
+  "cells": [
+    {
+      "id": "ovs-u2204",
+      "product": "ovs",
+      "distro": "u2204",
+      "ubuntu": "22.04",
+      "debs_target": "debs-ovs-u2204",
+      "carrier_target": "carrier-ovs-u2204",
+      "runtime_target": "runtime-ovs-u2204",
+      "images_target": "images-ovs-u2204",
+      "release_tag": "3.7.1-r1-ubuntu22.04-amd64",
+      "carrier_image": "local/ovn-builder/ovs-debs:3.7.1-r1-ubuntu22.04-amd64",
+      "runtime_image": "local/ovn-builder/ovs:3.7.1-r1-ubuntu22.04-amd64"
+    },
+    {
+      "id": "ovs-u2404",
+      "product": "ovs",
+      "distro": "u2404",
+      "ubuntu": "24.04",
+      "debs_target": "debs-ovs-u2404",
+      "carrier_target": "carrier-ovs-u2404",
+      "runtime_target": "runtime-ovs-u2404",
+      "images_target": "images-ovs-u2404",
+      "release_tag": "3.7.1-r1-ubuntu24.04-amd64",
+      "carrier_image": "local/ovn-builder/ovs-debs:3.7.1-r1-ubuntu24.04-amd64",
+      "runtime_image": "local/ovn-builder/ovs:3.7.1-r1-ubuntu24.04-amd64"
+    },
+    {
+      "id": "ovn-u2204",
+      "product": "ovn",
+      "distro": "u2204",
+      "ubuntu": "22.04",
+      "debs_target": "debs-ovn-u2204",
+      "carrier_target": "carrier-ovn-u2204",
+      "runtime_target": "runtime-ovn-u2204",
+      "images_target": "images-ovn-u2204",
+      "release_tag": "26.03.2-ovs3.7.1-r1-ubuntu22.04-amd64",
+      "carrier_image": "local/ovn-builder/ovn-debs:26.03.2-ovs3.7.1-r1-ubuntu22.04-amd64",
+      "runtime_image": "local/ovn-builder/ovn:26.03.2-ovs3.7.1-r1-ubuntu22.04-amd64"
+    },
+    {
+      "id": "ovn-u2404",
+      "product": "ovn",
+      "distro": "u2404",
+      "ubuntu": "24.04",
+      "debs_target": "debs-ovn-u2404",
+      "carrier_target": "carrier-ovn-u2404",
+      "runtime_target": "runtime-ovn-u2404",
+      "images_target": "images-ovn-u2404",
+      "release_tag": "26.03.2-ovs3.7.1-r1-ubuntu24.04-amd64",
+      "carrier_image": "local/ovn-builder/ovn-debs:26.03.2-ovs3.7.1-r1-ubuntu24.04-amd64",
+      "runtime_image": "local/ovn-builder/ovn:26.03.2-ovs3.7.1-r1-ubuntu24.04-amd64"
+    }
+  ],
+  "builders": [
+    {
+      "id": "u2204",
+      "distro": "u2204",
+      "ubuntu": "22.04",
+      "builder_target": "builder-u2204",
+      "release_tag": "ovn26.03.2-ovs3.7.1-r1-ubuntu22.04-amd64",
+      "builder_image": "local/ovn-builder/builder:ovn26.03.2-ovs3.7.1-r1-ubuntu22.04-amd64"
+    },
+    {
+      "id": "u2404",
+      "distro": "u2404",
+      "ubuntu": "24.04",
+      "builder_target": "builder-u2404",
+      "release_tag": "ovn26.03.2-ovs3.7.1-r1-ubuntu24.04-amd64",
+      "builder_image": "local/ovn-builder/builder:ovn26.03.2-ovs3.7.1-r1-ubuntu24.04-amd64"
+    }
+  ],
+  "kernels": [
+    {
+      "id": "jammy-6.8.0-52",
+      "distro": "u2204",
+      "ubuntu": "22.04",
+      "expected_uname": "6.8.0-52-generic",
+      "ovs_artifact": "debs-ovs-u2204",
+      "ovn_artifact": "debs-ovn-u2204",
+      "runs_on": "[\"self-hosted\",\"linux\",\"x64\",\"ovn-builder\",\"jammy-k6.8.0-52\"]"
+    },
+    {
+      "id": "noble-ga-6.8.0-138",
+      "distro": "u2404",
+      "ubuntu": "24.04",
+      "expected_uname": "6.8.0-138-generic",
+      "ovs_artifact": "debs-ovs-u2404",
+      "ovn_artifact": "debs-ovn-u2404",
+      "runs_on": "[\"self-hosted\",\"linux\",\"x64\",\"ovn-builder\",\"noble-k6.8.0-138\"]"
+    }
+  ]
+}

@@ -1,0 +1,385 @@
+name: Publish build-only
+
+on:
+  workflow_dispatch:
+    inputs:
+      ci_run_id:
+        description: Successful Build and test run ID for this exact main commit (kernel_tests=false)
+        required: true
+        type: string
+      repro_run_id:
+        description: Successful Reproducibility run ID for this exact main commit
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: ovn-builder-publication
+  cancel-in-progress: false
+
+env:
+  SOURCE_DATE_EPOCH: "1781626300"
+  DOCKER_BUILD_RECORD_UPLOAD: "false"
+  REPOSITORY_SOURCE: https://github.com/${{ github.repository }}
+  REPOSITORY_REVISION: ${{ github.sha }}
+
+jobs:
+  plan:
+    name: plan
+    runs-on: ubuntu-24.04
+    outputs:
+      products: ${{ steps.matrix.outputs.products }}
+      builders: ${{ steps.matrix.outputs.builders }}
+      image_prefix: ${{ steps.prefix.outputs.value }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+
+      - id: matrix
+        shell: bash
+        run: |
+          {
+            echo "products=$(jq -c '{include:.cells}' .github/ci-matrix.json)"
+            echo "builders=$(jq -c '{include:.builders}' .github/ci-matrix.json)"
+          } >> "$GITHUB_OUTPUT"
+
+      - id: prefix
+        shell: bash
+        env:
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          value="ghcr.io/$(tr '[:upper:]' '[:lower:]' <<< "$OWNER")/ovn-builder"
+          [[ $value =~ ^ghcr\.io/[a-z0-9]+([._-][a-z0-9]+)*(/[a-z0-9]+([._-][a-z0-9]+)*)+$ ]] || {
+            echo "canonical image prefix is not a normalized lowercase ghcr.io path" >&2
+            exit 2
+          }
+          echo "value=$value" >> "$GITHUB_OUTPUT"
+
+      - name: Validate trusted build-only prerequisite runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CI_RUN_ID: ${{ inputs.ci_run_id }}
+          REPRO_RUN_ID: ${{ inputs.repro_run_id }}
+        run: ./scripts/ci/validate-build-only-runs.sh "$CI_RUN_ID" "$REPRO_RUN_ID"
+
+  stage-products:
+    needs: plan
+    if: github.ref == 'refs/heads/main'
+    name: stage-build-only-product / ${{ matrix.id }}
+    environment: build-only-publication
+    permissions:
+      actions: read
+      contents: read
+      packages: write
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.products) }}
+    env:
+      IMAGE_PREFIX: ${{ needs.plan.outputs.image_prefix }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: debs-${{ matrix.id }}
+          path: downloaded
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.ci_run_id }}
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: repro-${{ matrix.id }}-a
+          path: repro-a
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.repro_run_id }}
+
+      - name: Verify exact CI artifact, image contracts, and reproduced bundle
+        env:
+          PRODUCT: ${{ matrix.product }}
+          CARRIER_IMAGE: ${{ matrix.carrier_image }}
+          RUNTIME_IMAGE: ${{ matrix.runtime_image }}
+          CARRIER_TAR: downloaded/${{ matrix.id }}-carrier.docker.tar
+          RUNTIME_TAR: downloaded/${{ matrix.id }}-runtime.docker.tar
+        run: |
+          (cd downloaded && sha256sum --check TRANSFER-SHA256SUMS)
+          ./scripts/ci/smoke-images.sh \
+            "$PRODUCT" \
+            downloaded/workdir \
+            "$CARRIER_TAR" \
+            "$RUNTIME_TAR" \
+            "$CARRIER_IMAGE" \
+            "$RUNTIME_IMAGE"
+          ./scripts/ci/compare-bundles.sh downloaded/workdir repro-a
+
+      - uses: oras-project/setup-oras@22ce207df3b08e061f537244349aac6ae1d214f6
+        with:
+          version: 1.3.0
+
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Stage exact build-only product images and package artifact
+        env:
+          CELL_ID: ${{ matrix.id }}
+          PRODUCT: ${{ matrix.product }}
+          LOCAL_CARRIER: ${{ matrix.carrier_image }}
+          LOCAL_RUNTIME: ${{ matrix.runtime_image }}
+          VERSION_TAG: ${{ matrix.release_tag }}
+          RELEASE_SHA: ${{ github.sha }}
+          OCI_SOURCE: https://github.com/${{ github.repository }}
+          KERNEL_VALIDATION: unverified
+        run: |
+          stage_tag="_staging-build-only-$GITHUB_RUN_ID-$CELL_ID"
+          canonical_tag="$VERSION_TAG-kernel-unverified-$RELEASE_SHA"
+          carrier_stage="$IMAGE_PREFIX/$PRODUCT-debs:$stage_tag"
+          runtime_stage="$IMAGE_PREFIX/$PRODUCT:$stage_tag"
+          oci_stage="$IMAGE_PREFIX/$PRODUCT-debs-oci:$stage_tag"
+
+          docker tag "$LOCAL_CARRIER" "$carrier_stage"
+          docker tag "$LOCAL_RUNTIME" "$runtime_stage"
+          docker push "$carrier_stage"
+          docker push "$runtime_stage"
+          ./scripts/oci/push-bundle.sh "$oci_stage" downloaded/workdir
+
+          carrier_digest=$(oras resolve "$carrier_stage")
+          runtime_digest=$(oras resolve "$runtime_stage")
+          oci_digest=$(oras resolve "$oci_stage")
+          digest_pattern='^sha256:[0-9a-f]{64}$'
+          [[ $carrier_digest =~ $digest_pattern ]]
+          [[ $runtime_digest =~ $digest_pattern ]]
+          [[ $oci_digest =~ $digest_pattern ]]
+
+          mkdir -p stage-metadata
+          jq -nS \
+            --arg cell "$CELL_ID" \
+            --arg prefix "$IMAGE_PREFIX" \
+            --arg run_id "$GITHUB_RUN_ID" \
+            --arg run_attempt "$GITHUB_RUN_ATTEMPT" \
+            --arg sha "$RELEASE_SHA" \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg carrier_source "$carrier_stage" \
+            --arg carrier_canonical "$IMAGE_PREFIX/$PRODUCT-debs:$canonical_tag" \
+            --arg carrier_digest "$carrier_digest" \
+            --arg runtime_source "$runtime_stage" \
+            --arg runtime_canonical "$IMAGE_PREFIX/$PRODUCT:$canonical_tag" \
+            --arg runtime_digest "$runtime_digest" \
+            --arg oci_source "$oci_stage" \
+            --arg oci_canonical "$IMAGE_PREFIX/$PRODUCT-debs-oci:$canonical_tag" \
+            --arg oci_digest "$oci_digest" '{
+              schema: "ovn-builder.build-only-stage.v1",
+              kernel_validation: "unverified",
+              category: "product",
+              cell_id: $cell,
+              image_prefix: $prefix,
+              release_run: {
+                id: $run_id,
+                attempt: $run_attempt,
+                sha: $sha,
+                repository: $repository
+              },
+              descriptors: [
+                {
+                  cell_id: $cell,
+                  kind: "carrier",
+                  source_ref: $carrier_source,
+                  canonical_ref: $carrier_canonical,
+                  digest: $carrier_digest
+                },
+                {
+                  cell_id: $cell,
+                  kind: "runtime",
+                  source_ref: $runtime_source,
+                  canonical_ref: $runtime_canonical,
+                  digest: $runtime_digest
+                },
+                {
+                  cell_id: $cell,
+                  kind: "oci-bundle",
+                  source_ref: $oci_source,
+                  canonical_ref: $oci_canonical,
+                  digest: $oci_digest
+                }
+              ]
+            }' > "stage-metadata/product-$CELL_ID.json"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: build-only-stage-product-${{ matrix.id }}
+          path: stage-metadata/product-${{ matrix.id }}.json
+          if-no-files-found: error
+          compression-level: 0
+          overwrite: true
+          retention-days: 14
+
+  stage-builders:
+    needs: plan
+    if: github.ref == 'refs/heads/main'
+    name: stage-build-only-builder / ${{ matrix.id }}
+    environment: build-only-publication
+    permissions:
+      actions: read
+      contents: read
+      packages: write
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.builders) }}
+    env:
+      IMAGE_PREFIX: ${{ needs.plan.outputs.image_prefix }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: builder-${{ matrix.id }}
+          path: downloaded
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.ci_run_id }}
+
+      - name: Verify exact CI builder archive
+        env:
+          BUILDER_IMAGE: ${{ matrix.builder_image }}
+          EXPECTED_UBUNTU: ${{ matrix.ubuntu }}
+        run: |
+          (cd downloaded && sha256sum --check TRANSFER-SHA256SUMS)
+          ./scripts/ci/smoke-builder.sh \
+            downloaded/builder.docker.tar \
+            "$BUILDER_IMAGE" \
+            "$EXPECTED_UBUNTU"
+
+      - uses: oras-project/setup-oras@22ce207df3b08e061f537244349aac6ae1d214f6
+        with:
+          version: 1.3.0
+
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Stage exact build-only builder image
+        env:
+          CELL_ID: ${{ matrix.id }}
+          LOCAL_BUILDER: ${{ matrix.builder_image }}
+          VERSION_TAG: ${{ matrix.release_tag }}
+          RELEASE_SHA: ${{ github.sha }}
+        run: |
+          stage_tag="_staging-build-only-$GITHUB_RUN_ID-builder-$CELL_ID"
+          canonical_tag="$VERSION_TAG-kernel-unverified-$RELEASE_SHA"
+          builder_stage="$IMAGE_PREFIX/builder:$stage_tag"
+
+          docker tag "$LOCAL_BUILDER" "$builder_stage"
+          docker push "$builder_stage"
+          builder_digest=$(oras resolve "$builder_stage")
+          [[ $builder_digest =~ ^sha256:[0-9a-f]{64}$ ]]
+
+          mkdir -p stage-metadata
+          jq -nS \
+            --arg cell "$CELL_ID" \
+            --arg prefix "$IMAGE_PREFIX" \
+            --arg run_id "$GITHUB_RUN_ID" \
+            --arg run_attempt "$GITHUB_RUN_ATTEMPT" \
+            --arg sha "$RELEASE_SHA" \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg source "$builder_stage" \
+            --arg canonical "$IMAGE_PREFIX/builder:$canonical_tag" \
+            --arg digest "$builder_digest" '{
+              schema: "ovn-builder.build-only-stage.v1",
+              kernel_validation: "unverified",
+              category: "builder",
+              cell_id: $cell,
+              image_prefix: $prefix,
+              release_run: {
+                id: $run_id,
+                attempt: $run_attempt,
+                sha: $sha,
+                repository: $repository
+              },
+              descriptors: [{
+                cell_id: $cell,
+                kind: "builder",
+                source_ref: $source,
+                canonical_ref: $canonical,
+                digest: $digest
+              }]
+            }' > "stage-metadata/builder-$CELL_ID.json"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: build-only-stage-builder-${{ matrix.id }}
+          path: stage-metadata/builder-${{ matrix.id }}.json
+          if-no-files-found: error
+          compression-level: 0
+          overwrite: true
+          retention-days: 14
+
+  promote:
+    needs: [plan, stage-products, stage-builders]
+    if: github.ref == 'refs/heads/main'
+    name: promote-build-only
+    environment: build-only-publication
+    permissions:
+      actions: read
+      contents: read
+      packages: write
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      IMAGE_PREFIX: ${{ needs.plan.outputs.image_prefix }}
+      RELEASE_SHA: ${{ github.sha }}
+      RELEASE_RUN_ID: ${{ github.run_id }}
+      RELEASE_RUN_ATTEMPT: ${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          pattern: build-only-stage-*
+          path: stage-metadata
+          merge-multiple: true
+
+      - name: Validate and collect every build-only staged digest
+        run: >-
+          ./scripts/release/validate-build-only-stage-metadata.sh
+          stage-metadata build-only-release-set.v1.json
+
+      - uses: oras-project/setup-oras@22ce207df3b08e061f537244349aac6ae1d214f6
+        with:
+          version: 1.3.0
+
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Preflight and promote kernel-unverified full-SHA tags
+        run: ./scripts/release/promote-build-only.sh build-only-release-set.v1.json
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: build-only-release-set-${{ github.run_id }}
+          path: build-only-release-set.v1.json
+          if-no-files-found: error
+          compression-level: 0
+          overwrite: true
+          retention-days: 14

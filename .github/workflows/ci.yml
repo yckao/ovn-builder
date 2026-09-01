@@ -1,0 +1,208 @@
+name: Build and test
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      kernel_tests:
+        description: Run on the two ephemeral exact-kernel self-hosted runners
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+env:
+  SOURCE_DATE_EPOCH: "1781626300"
+  DOCKER_BUILD_RECORD_UPLOAD: "false"
+  REPOSITORY_SOURCE: https://github.com/${{ github.repository }}
+  REPOSITORY_REVISION: ${{ github.sha }}
+
+jobs:
+  plan:
+    name: plan
+    runs-on: ubuntu-24.04
+    outputs:
+      build: ${{ steps.matrix.outputs.build }}
+      builders: ${{ steps.matrix.outputs.builders }}
+      kernel: ${{ steps.matrix.outputs.kernel }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - id: matrix
+        shell: bash
+        run: |
+          {
+            echo "build=$(jq -c '{include:.cells}' .github/ci-matrix.json)"
+            echo "builders=$(jq -c '{include:.builders}' .github/ci-matrix.json)"
+            echo "kernel=$(jq -c '{include:.kernels}' .github/ci-matrix.json)"
+          } >> "$GITHUB_OUTPUT"
+      - run: ./scripts/ci/validate.sh
+
+  build:
+    needs: plan
+    name: build / ${{ matrix.id }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.build) }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
+        with:
+          driver: docker-container
+          version: v0.36.1
+          driver-opts: |
+            image=moby/buildkit:v0.32.2@sha256:28a898719c18a33f4e8000685287fa36fd0dd9560c6440227d3a732d79bb41d8
+
+      - name: Build and export DEBs
+        uses: docker/bake-action@5be5f02ff8819ecd3092ea6b2e6261c31774f2b4
+        with:
+          source: .
+          targets: ${{ matrix.debs_target }}
+          pull: true
+          set: |
+            ${{ matrix.debs_target }}.cache-from=type=gha,scope=${{ matrix.id }}-packages
+            ${{ matrix.debs_target }}.cache-to=type=gha,mode=max,scope=${{ matrix.id }}-packages
+
+      - name: Build conventional carrier and runtime archives
+        shell: bash
+        run: mkdir -p dist/images
+
+      - uses: docker/bake-action@5be5f02ff8819ecd3092ea6b2e6261c31774f2b4
+        with:
+          source: .
+          targets: ${{ matrix.images_target }}
+          pull: true
+          set: |
+            ${{ matrix.carrier_target }}.output=type=docker,dest=./dist/images/${{ matrix.id }}-carrier.docker.tar
+            ${{ matrix.runtime_target }}.output=type=docker,dest=./dist/images/${{ matrix.id }}-runtime.docker.tar
+            ${{ matrix.carrier_target }}.cache-from=type=gha,scope=${{ matrix.id }}-packages
+            ${{ matrix.runtime_target }}.cache-from=type=gha,scope=${{ matrix.id }}-packages
+
+      - name: Verify package and image contracts
+        shell: bash
+        run: |
+          bundle="dist/${{ matrix.product }}/${{ matrix.distro }}"
+          ./scripts/ci/smoke-images.sh \
+            "${{ matrix.product }}" \
+            "$bundle" \
+            "dist/images/${{ matrix.id }}-carrier.docker.tar" \
+            "dist/images/${{ matrix.id }}-runtime.docker.tar" \
+            "${{ matrix.carrier_image }}" \
+            "${{ matrix.runtime_image }}"
+
+      - name: Assemble air-gap transfer artifact
+        shell: bash
+        run: |
+          artifact="dist/artifacts/${{ matrix.id }}"
+          mkdir -p "$artifact"
+          cp -a "dist/${{ matrix.product }}/${{ matrix.distro }}" "$artifact/workdir"
+          cp "dist/images/${{ matrix.id }}-carrier.docker.tar" "$artifact/"
+          cp "dist/images/${{ matrix.id }}-runtime.docker.tar" "$artifact/"
+          cd "$artifact"
+          sha256sum ./*.docker.tar > TRANSFER-SHA256SUMS
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: debs-${{ matrix.id }}
+          path: dist/artifacts/${{ matrix.id }}
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+
+  builder:
+    needs: plan
+    name: builder / ${{ matrix.id }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.builders) }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
+        with:
+          driver: docker-container
+          version: v0.36.1
+          driver-opts: |
+            image=moby/buildkit:v0.32.2@sha256:28a898719c18a33f4e8000685287fa36fd0dd9560c6440227d3a732d79bb41d8
+
+      - name: Build conventional builder archive
+        run: mkdir -p "dist/builders/${{ matrix.id }}"
+
+      - uses: docker/bake-action@5be5f02ff8819ecd3092ea6b2e6261c31774f2b4
+        with:
+          source: .
+          targets: ${{ matrix.builder_target }}
+          pull: true
+          set: |
+            ${{ matrix.builder_target }}.output=type=docker,dest=./dist/builders/${{ matrix.id }}/builder.docker.tar
+            ${{ matrix.builder_target }}.cache-from=type=gha,scope=builder-${{ matrix.id }}
+            ${{ matrix.builder_target }}.cache-to=type=gha,mode=max,scope=builder-${{ matrix.id }}
+
+      - name: Verify builder image contract
+        run: |
+          ./scripts/ci/smoke-builder.sh \
+            "dist/builders/${{ matrix.id }}/builder.docker.tar" \
+            "${{ matrix.builder_image }}" \
+            "${{ matrix.ubuntu }}"
+
+      - name: Hash builder transfer archive
+        run: |
+          cd "dist/builders/${{ matrix.id }}"
+          sha256sum builder.docker.tar > TRANSFER-SHA256SUMS
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: builder-${{ matrix.id }}
+          path: dist/builders/${{ matrix.id }}
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+
+  exact-kernel:
+    needs: [plan, build]
+    name: exact-kernel / ${{ matrix.id }}
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      inputs.kernel_tests &&
+      github.ref == 'refs/heads/main'
+    environment: kernel-validation
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.kernel) }}
+    runs-on: ${{ fromJSON(matrix.runs_on) }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: ${{ matrix.ovs_artifact }}
+          path: downloaded/ovs
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: ${{ matrix.ovn_artifact }}
+          path: downloaded/ovn
+      - name: Prove standalone and OVN OVS DEBs are identical
+        run: ./scripts/ci/compare-ovs-debs.sh downloaded/ovs/workdir downloaded/ovn/workdir
+      - name: Assert kernel and exercise OVS/OVN
+        run: |
+          ./scripts/ci/kernel-smoke.sh \
+            "${{ matrix.ubuntu }}" \
+            "${{ matrix.expected_uname }}" \
+            downloaded/ovs/workdir \
+            downloaded/ovn/workdir
