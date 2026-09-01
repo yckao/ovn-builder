@@ -13,6 +13,9 @@ The conventional carrier is the primary air-gap transport. It is a normal
 Docker image, so an environment that permits Docker images but not arbitrary
 OCI artifacts can load it and copy the packages out. See
 [the air-gap guide](docs/airgap.md) for the complete transfer procedure.
+See [the usage guide](docs/usage.md) for pull, digest pinning, DEB extraction,
+runtime, builder, ORAS, and Docker save/load examples for every published
+repository.
 
 ## Version 1 scope
 
