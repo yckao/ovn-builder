@@ -29,9 +29,9 @@ command -v jq >/dev/null || die "jq is required"
 jq -e '
   [.cells[].id] == ["ovs-u2204", "ovs-u2404", "ovn-u2204", "ovn-u2404"] and
   [.builders[].id] == ["u2204", "u2404"] and
-  [.kernels[].id] == ["jammy-6.8.0-52", "noble-ga-6.8.0-138"]
+  [.package_pairs[].id] == ["u2204", "u2404"]
 ' .github/ci-matrix.json >/dev/null \
-    || die "release requires the exact locked v1 product, builder, and kernel matrices"
+    || die "release requires the exact locked product, builder, and package-pair matrices"
 
 tmp=$(mktemp -d)
 trap 'rm -rf -- "$tmp"' EXIT
@@ -58,26 +58,28 @@ assert_run() {
     local expected_id=$2
     local expected_path=$3
     local description=$4
+    local run_kind=$5
 
     jq -e \
         --argjson expected_id "$expected_id" \
         --arg expected_sha "$GITHUB_SHA" \
-        --arg expected_path "$expected_path" '
+        --arg expected_path "$expected_path" \
+        --arg run_kind "$run_kind" '
           .id == $expected_id and
           .status == "completed" and
           .conclusion == "success" and
-          .event == "workflow_dispatch" and
+          (.event == "workflow_dispatch" or ($run_kind == "ci" and .event == "push")) and
           .head_branch == "main" and
           .head_sha == $expected_sha and
           .path == $expected_path and
           .head_repository.full_name == env.GITHUB_REPOSITORY and
           (.run_attempt | type) == "number" and
           .run_attempt >= 1
-        ' "$file" >/dev/null || die "$description is not a successful same-SHA main workflow_dispatch run"
+        ' "$file" >/dev/null || die "$description is not a successful same-SHA main run"
 }
 
-assert_run "$tmp/ci-run.json" "$ci_run_id" ".github/workflows/ci.yml" "CI run"
-assert_run "$tmp/repro-run.json" "$repro_run_id" ".github/workflows/reproducibility.yml" "reproducibility run"
+assert_run "$tmp/ci-run.json" "$ci_run_id" ".github/workflows/ci.yml" "CI run" ci
+assert_run "$tmp/repro-run.json" "$repro_run_id" ".github/workflows/reproducibility.yml" "reproducibility run" repro
 
 ci_attempt=$(jq -r '.run_attempt' "$tmp/ci-run.json")
 repro_attempt=$(jq -r '.run_attempt' "$tmp/repro-run.json")
@@ -130,8 +132,8 @@ ci_jobs=$(jq -cn '[
   "build / ovn-u2404",
   "builder / u2204",
   "builder / u2404",
-  "exact-kernel / jammy-6.8.0-52",
-  "exact-kernel / noble-ga-6.8.0-138"
+  "package-consistency / u2204",
+  "package-consistency / u2404"
 ]')
 repro_jobs=$(jq -cn '[
   "plan",

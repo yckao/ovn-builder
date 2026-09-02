@@ -5,12 +5,6 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
-    inputs:
-      kernel_tests:
-        description: Run on the two ephemeral exact-kernel self-hosted runners
-        required: false
-        default: false
-        type: boolean
 
 permissions:
   contents: read
@@ -28,7 +22,7 @@ jobs:
     outputs:
       build: ${{ steps.matrix.outputs.build }}
       builders: ${{ steps.matrix.outputs.builders }}
-      kernel: ${{ steps.matrix.outputs.kernel }}
+      package_pairs: ${{ steps.matrix.outputs.package_pairs }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
@@ -39,7 +33,7 @@ jobs:
           {
             echo "build=$(jq -c '{include:.cells}' .github/ci-matrix.json)"
             echo "builders=$(jq -c '{include:.builders}' .github/ci-matrix.json)"
-            echo "kernel=$(jq -c '{include:.kernels}' .github/ci-matrix.json)"
+            echo "package_pairs=$(jq -c '{include:.package_pairs}' .github/ci-matrix.json)"
           } >> "$GITHUB_OUTPUT"
       - run: ./scripts/ci/validate.sh
 
@@ -172,19 +166,14 @@ jobs:
           compression-level: 0
           retention-days: 14
 
-  exact-kernel:
+  package-consistency:
     needs: [plan, build]
-    name: exact-kernel / ${{ matrix.id }}
-    if: >-
-      github.event_name == 'workflow_dispatch' &&
-      inputs.kernel_tests &&
-      github.ref == 'refs/heads/main'
-    environment: kernel-validation
-    timeout-minutes: 60
+    name: package-consistency / ${{ matrix.id }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
     strategy:
       fail-fast: false
-      matrix: ${{ fromJSON(needs.plan.outputs.kernel) }}
-    runs-on: ${{ fromJSON(matrix.runs_on) }}
+      matrix: ${{ fromJSON(needs.plan.outputs.package_pairs) }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
@@ -199,10 +188,3 @@ jobs:
           path: downloaded/ovn
       - name: Prove standalone and OVN OVS DEBs are identical
         run: ./scripts/ci/compare-ovs-debs.sh downloaded/ovs/workdir downloaded/ovn/workdir
-      - name: Assert kernel and exercise OVS/OVN
-        run: |
-          ./scripts/ci/kernel-smoke.sh \
-            "${{ matrix.ubuntu }}" \
-            "${{ matrix.expected_uname }}" \
-            downloaded/ovs/workdir \
-            downloaded/ovn/workdir

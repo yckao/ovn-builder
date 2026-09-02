@@ -1,5 +1,0 @@
-#!/usr/bin/env bash
-set -Eeuo pipefail
-
-script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-exec bash "$script_dir/validate-stage-metadata-common.sh" build-only "$@"

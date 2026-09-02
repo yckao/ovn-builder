@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       ci_run_id:
-        description: Successful Build and test run ID for this exact main commit (kernel_tests=true)
+        description: Successful Build and test run ID for this exact main commit
         required: true
         type: string
       repro_run_id:
@@ -192,8 +192,7 @@ jobs:
             --arg oci_source "$oci_stage" \
             --argjson oci_refs "$oci_refs" \
             --arg oci_digest "$oci_digest" '{
-              schema: "ovn-builder.release-stage.v2",
-              kernel_validation: "verified",
+              schema: "ovn-builder.release-stage.v3",
               category: "product",
               cell_id: $cell,
               image_prefix: $prefix,
@@ -319,8 +318,7 @@ jobs:
             --arg source "$builder_stage" \
             --argjson canonical_refs "$builder_refs" \
             --arg digest "$builder_digest" '{
-              schema: "ovn-builder.release-stage.v2",
-              kernel_validation: "verified",
+              schema: "ovn-builder.release-stage.v3",
               category: "builder",
               cell_id: $cell,
               image_prefix: $prefix,
@@ -376,7 +374,7 @@ jobs:
           merge-multiple: true
 
       - name: Validate and collect every staged digest
-        run: ./scripts/release/validate-stage-metadata.sh stage-metadata release-set.v2.json
+        run: ./scripts/release/validate-stage-metadata.sh stage-metadata release-set.v3.json
 
       - uses: oras-project/setup-oras@22ce207df3b08e061f537244349aac6ae1d214f6
         with:
@@ -397,12 +395,12 @@ jobs:
             echo "refusing to move aliases from an obsolete main commit" >&2
             exit 1
           }
-          ./scripts/release/promote-release.sh release-set.v2.json
+          ./scripts/release/promote-release.sh release-set.v3.json
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: release-set-${{ github.run_id }}
-          path: release-set.v2.json
+          path: release-set.v3.json
           if-no-files-found: error
           compression-level: 0
           overwrite: true

@@ -1,5 +1,5 @@
 {
-  "schema": "io.ovn-builder.release-lock.v1",
+  "schema": "io.ovn-builder.release-lock.v2",
   "release_revision": "r1",
   "source_date_epoch": 1781626300,
   "apt_snapshot": "20260820T000000Z",
@@ -46,19 +46,6 @@
         "version": "20260601~22.04.1",
         "url": "https://snapshot.ubuntu.com/ubuntu/20260820T000000Z/pool/main/c/ca-certificates/ca-certificates_20260601~22.04.1_all.deb",
         "sha256": "6e8cdcc8c86103acd4fc14649eac62ff2037108389074a7b167567af33c32245"
-      },
-      "kernel": {
-        "policy": "exact-compatibility",
-        "snapshot": "20250130T000000Z",
-        "release": "6.8.0-52-generic",
-        "package_version": "6.8.0-52.53~22.04.1",
-        "packages": [
-          "linux-image-6.8.0-52-generic",
-          "linux-modules-6.8.0-52-generic",
-          "linux-modules-extra-6.8.0-52-generic",
-          "linux-hwe-6.8-headers-6.8.0-52",
-          "linux-headers-6.8.0-52-generic"
-        ]
       }
     },
     "24.04": {
@@ -68,19 +55,6 @@
         "version": "20260601~24.04.1",
         "url": "https://snapshot.ubuntu.com/ubuntu/20260820T000000Z/pool/main/c/ca-certificates/ca-certificates_20260601~24.04.1_all.deb",
         "sha256": "6bac2a01979e210d9eac1d4d56747ec709ea60654744d66705dc3c36e7629e50"
-      },
-      "kernel": {
-        "policy": "server-ga-linux-generic",
-        "snapshot": "20260820T000000Z",
-        "release": "6.8.0-138-generic",
-        "package_version": "6.8.0-138.138",
-        "packages": [
-          "linux-image-6.8.0-138-generic",
-          "linux-modules-6.8.0-138-generic",
-          "linux-modules-extra-6.8.0-138-generic",
-          "linux-headers-6.8.0-138",
-          "linux-headers-6.8.0-138-generic"
-        ]
       }
     }
   }

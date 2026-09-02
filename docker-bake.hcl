@@ -69,8 +69,6 @@ target "_u2204" {
     APT_SNAPSHOT             = "20260820T000000Z"
     CA_CERTIFICATES_URL      = "https://snapshot.ubuntu.com/ubuntu/20260820T000000Z/pool/main/c/ca-certificates/ca-certificates_20260601~22.04.1_all.deb"
     CA_CERTIFICATES_SHA256   = "6e8cdcc8c86103acd4fc14649eac62ff2037108389074a7b167567af33c32245"
-    TARGET_KERNEL            = "6.8.0-52-generic"
-    KERNEL_PACKAGE_VERSION   = "6.8.0-52.53~22.04.1"
   }
 }
 
@@ -82,8 +80,6 @@ target "_u2404" {
     APT_SNAPSHOT             = "20260820T000000Z"
     CA_CERTIFICATES_URL      = "https://snapshot.ubuntu.com/ubuntu/20260820T000000Z/pool/main/c/ca-certificates/ca-certificates_20260601~24.04.1_all.deb"
     CA_CERTIFICATES_SHA256   = "6bac2a01979e210d9eac1d4d56747ec709ea60654744d66705dc3c36e7629e50"
-    TARGET_KERNEL            = "6.8.0-138-generic"
-    KERNEL_PACKAGE_VERSION   = "6.8.0-138.138"
   }
 }
 

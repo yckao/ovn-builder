@@ -16,7 +16,7 @@ jq -e '
 ' .github/toolchain-lock.json >/dev/null
 
 jq -e '
-  .schema == "io.ovn-builder.release-lock.v1" and
+  .schema == "io.ovn-builder.release-lock.v2" and
   (.release_revision | test("^r[1-9][0-9]*$")) and
   .sources.ovs.version == "3.7.1" and
   .sources.ovs.commit == "7921d9c6924b8934ea1de9481891ac1172649280" and
@@ -28,8 +28,8 @@ jq -e '
   .features.lto == false and
   .features.debug_symbols == false and
   .packaging_patches == [{path:"patches/ovs/0001-reproducible-source-tar.patch",sha256:"84ef45be776a10b229da0b4eb27cc3cb53e12ef2a25a6aa8324e2423f733f981",purpose:"Normalize the embedded openvswitch-source tar created after dh_autoreconf"}] and
-  .ubuntu["22.04"].kernel.release == "6.8.0-52-generic" and
-  .ubuntu["24.04"].kernel.policy == "server-ga-linux-generic"
+  (.ubuntu | keys | sort) == ["22.04", "24.04"] and
+  all(.ubuntu[]; (keys | sort) == ["base_image", "ca_certificates", "codename"])
 ' release-lock.json >/dev/null
 
 while IFS=$'\t' read -r path expected; do
@@ -48,8 +48,7 @@ jq -e --slurpfile release release-lock.json '
     .alias_tag == (.release_tag | sub("-" + $release[0].release_revision + "-"; "-")) and
     all((.release_tag, .alias_tag);
       endswith("-ubuntu" + $cell.ubuntu + "-amd64") and
-      test("^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$") and
-      ((contains("kernel-unverified")) | not))) and
+      test("^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$"))) and
   ([.cells[] | .product as $product | (.release_tag, .alias_tag) | $product + ":" + .] | unique | length) == 8 and
   (.builders | length) == 2 and
   ([.builders[].id] | unique | length) == 2 and
@@ -59,15 +58,13 @@ jq -e --slurpfile release release-lock.json '
     .alias_tag == (.release_tag | sub("-" + $release[0].release_revision + "-"; "-")) and
     all((.release_tag, .alias_tag);
       endswith("-ubuntu" + $builder.ubuntu + "-amd64") and
-      test("^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$") and
-      ((contains("kernel-unverified")) | not))) and
+      test("^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$"))) and
   ([.builders[] | (.release_tag, .alias_tag)] | unique | length) == 4 and
-  (.kernels | length) == 2 and
-  all(.kernels[];
-    .ubuntu as $ubuntu |
+  (.package_pairs | length) == 2 and
+  [.package_pairs[].id] == ["u2204", "u2404"] and
+  all(.package_pairs[];
     .ovs_artifact == ("debs-ovs-" + .distro) and
-    .ovn_artifact == ("debs-ovn-" + .distro) and
-    .expected_uname == $release[0].ubuntu[$ubuntu].kernel.release)
+    .ovn_artifact == ("debs-ovn-" + .distro))
 ' .github/ci-matrix.json >/dev/null
 
 while IFS= read -r script; do
@@ -107,9 +104,7 @@ if command -v docker >/dev/null && docker buildx version >/dev/null 2>&1; then
           UBUNTU_CODENAME: $target.codename,
           APT_SNAPSHOT: $release.apt_snapshot,
           CA_CERTIFICATES_URL: $target.ca_certificates.url,
-          CA_CERTIFICATES_SHA256: $target.ca_certificates.sha256,
-          TARGET_KERNEL: $target.kernel.release,
-          KERNEL_PACKAGE_VERSION: $target.kernel.package_version
+          CA_CERTIFICATES_SHA256: $target.ca_certificates.sha256
         };
       def target_matches($name; $expected):
         $plan[0].target[$name] as $actual |
@@ -156,9 +151,5 @@ oras_version=$(jq -r '.oras_version' .github/toolchain-lock.json)
     || { echo "reproducibility BuildKit image pin does not match the toolchain lock" >&2; exit 1; }
 [[ $(grep -Fc "version: $oras_version" .github/workflows/release.yml) == 3 ]] \
     || { echo "release ORAS version pins do not match the toolchain lock" >&2; exit 1; }
-if [[ -f .github/workflows/publish-build-only.yml ]]; then
-    [[ $(grep -Fc "version: $oras_version" .github/workflows/publish-build-only.yml) == 3 ]] \
-        || { echo "build-only ORAS version pins do not match the toolchain lock" >&2; exit 1; }
-fi
 
 echo "release lock, CI toolchain, matrix, scripts and Bake definition are valid"

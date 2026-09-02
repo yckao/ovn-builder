@@ -13,9 +13,6 @@ command -v oras >/dev/null || { echo "oras is required" >&2; exit 2; }
 "$(dirname -- "$0")/../bundle/verify.sh" "$bundle"
 
 declare -a annotations=()
-# Kernel validation is release evidence, not an input to these package bytes.
-# Keeping it out of this manifest lets build-only and verified publication
-# converge on the same digest; the release-set metadata records the result.
 if [[ -n ${OCI_SOURCE:-} ]]; then
     [[ $OCI_SOURCE =~ ^https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || {
         echo "OCI_SOURCE must identify a GitHub repository" >&2
@@ -42,9 +39,9 @@ while IFS= read -r -d '' path; do
     layers+=("$relative:$media_type")
 done < <(find "$bundle" -type f -print0 | sort -z)
 
-product=$(jq -r '.product' "$bundle/manifest.v1.json")
-ubuntu=$(jq -r '.target.ubuntu_version' "$bundle/manifest.v1.json")
-source_date_epoch=$(jq -r '.build.source_date_epoch' "$bundle/manifest.v1.json")
+product=$(jq -r '.product' "$bundle/manifest.v2.json")
+ubuntu=$(jq -r '.target.ubuntu_version' "$bundle/manifest.v2.json")
+source_date_epoch=$(jq -r '.build.source_date_epoch' "$bundle/manifest.v2.json")
 [[ $source_date_epoch =~ ^[1-9][0-9]*$ ]] || {
     echo "bundle manifest has an invalid source_date_epoch" >&2
     exit 2
@@ -53,7 +50,7 @@ created=$(jq -nr --argjson epoch "$source_date_epoch" '$epoch | todateiso8601')
 (
     cd "$bundle"
     oras push \
-        --artifact-type application/vnd.ovn-builder.deb-bundle.v1 \
+        --artifact-type application/vnd.ovn-builder.deb-bundle.v2 \
         --annotation "org.opencontainers.image.created=$created" \
         --annotation "io.ovn-builder.product=$product" \
         --annotation "io.ovn-builder.ubuntu=$ubuntu" \

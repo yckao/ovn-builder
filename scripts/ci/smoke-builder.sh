@@ -26,9 +26,8 @@ if [[ -n ${REPOSITORY_REVISION:-} ]]; then
     [[ $(docker image inspect -f '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$builder_image") == "$REPOSITORY_REVISION" ]] \
         || die "builder repository revision label is wrong"
 fi
-docker image inspect "$builder_image" \
-    | jq -e '((.[0].Config.Labels // {}) | has("io.ovn-builder.tested-kernel") | not)' >/dev/null \
-    || die "builder must not claim a tested kernel"
+[[ $(docker image inspect -f '{{index .Config.Labels "io.ovn-builder.ubuntu"}}' "$builder_image") == "$expected_ubuntu" ]] \
+    || die "builder Ubuntu label is wrong"
 
 docker run --rm --pull=never --network=none --read-only --cap-drop=ALL \
     --security-opt=no-new-privileges \
@@ -36,7 +35,6 @@ docker run --rm --pull=never --network=none --read-only --cap-drop=ALL \
     --entrypoint /bin/bash \
     "$builder_image" -ceu '
         test "$UBUNTU_VERSION" = "$EXPECTED_UBUNTU"
-        test "$TARGET_KERNEL" = "$(jq -r --arg v "$UBUNTU_VERSION" ".ubuntu[\$v].kernel.release" /usr/share/ovn-builder/release-lock.json)"
         test -n "$OVS_VERSION"
         test -n "$OVN_VERSION"
         test -f /usr/share/ovn-builder/release-lock.json

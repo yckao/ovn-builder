@@ -15,8 +15,6 @@ ARG OVN_COMMIT=3facc3b5e99ba2c863ec5f47f37466397f735802
 ARG OVN_UPSTREAM_OVS_GITLINK=bdb95cc1920d4ab66fe062a9470eeb33a51d33e2
 ARG SOURCE_DATE_EPOCH=1781626300
 ARG BUILD_JOBS=4
-ARG TARGET_KERNEL
-ARG KERNEL_PACKAGE_VERSION
 ARG REPOSITORY_SOURCE
 ARG REPOSITORY_REVISION
 
@@ -57,8 +55,6 @@ ARG OVN_VERSION
 ARG OVN_COMMIT
 ARG OVN_UPSTREAM_OVS_GITLINK
 ARG SOURCE_DATE_EPOCH
-ARG TARGET_KERNEL
-ARG KERNEL_PACKAGE_VERSION
 ARG REPOSITORY_SOURCE
 ARG REPOSITORY_REVISION
 ARG TARGETARCH
@@ -76,8 +72,6 @@ ENV DEBIAN_FRONTEND=noninteractive \
     UBUNTU_CODENAME=${UBUNTU_CODENAME} \
     APT_SNAPSHOT=${APT_SNAPSHOT} \
     BASE_IMAGE=${UBUNTU_BASE} \
-    TARGET_KERNEL=${TARGET_KERNEL} \
-    KERNEL_PACKAGE_VERSION=${KERNEL_PACKAGE_VERSION} \
     TARGET_ARCH=${TARGETARCH}
 
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
@@ -132,8 +126,8 @@ LABEL org.opencontainers.image.title="OVN and OVS reproducible build environment
       io.ovn-builder.ovn-commit="${OVN_COMMIT}" \
       io.ovn-builder.ovs-commit="${OVS_COMMIT}" \
       io.ovn-builder.apt-snapshot="${APT_SNAPSHOT}" \
-      io.ovn-builder.dpdk="false" \
-      io.ovn-builder.target-kernel="${TARGET_KERNEL}"
+      io.ovn-builder.ubuntu="${UBUNTU_VERSION}" \
+      io.ovn-builder.dpdk="false"
 
 WORKDIR /workspace
 CMD ["/bin/bash"]
@@ -197,7 +191,6 @@ ARG OVS_VERSION
 ARG OVS_COMMIT
 ARG UBUNTU_VERSION
 ARG APT_SNAPSHOT
-ARG TARGET_KERNEL
 ARG REPOSITORY_SOURCE
 ARG REPOSITORY_REVISION
 WORKDIR /workdir
@@ -209,8 +202,7 @@ LABEL org.opencontainers.image.title="Open vSwitch DEB carrier" \
       io.ovn-builder.ovs-commit="${OVS_COMMIT}" \
       io.ovn-builder.ubuntu="${UBUNTU_VERSION}" \
       io.ovn-builder.apt-snapshot="${APT_SNAPSHOT}" \
-      io.ovn-builder.target-kernel="${TARGET_KERNEL}" \
-      io.ovn-builder.bundle.schema="1" \
+      io.ovn-builder.bundle.schema="2" \
       io.ovn-builder.bundle.profile="generated-only" \
       io.ovn-builder.payload.path="/workdir"
 USER 65534:65534
@@ -223,7 +215,6 @@ ARG OVN_VERSION
 ARG OVN_COMMIT
 ARG UBUNTU_VERSION
 ARG APT_SNAPSHOT
-ARG TARGET_KERNEL
 ARG REPOSITORY_SOURCE
 ARG REPOSITORY_REVISION
 WORKDIR /workdir
@@ -236,8 +227,7 @@ LABEL org.opencontainers.image.title="OVN and Open vSwitch DEB carrier" \
       io.ovn-builder.ovs-commit="${OVS_COMMIT}" \
       io.ovn-builder.ubuntu="${UBUNTU_VERSION}" \
       io.ovn-builder.apt-snapshot="${APT_SNAPSHOT}" \
-      io.ovn-builder.target-kernel="${TARGET_KERNEL}" \
-      io.ovn-builder.bundle.schema="1" \
+      io.ovn-builder.bundle.schema="2" \
       io.ovn-builder.bundle.profile="generated-only" \
       io.ovn-builder.payload.path="/workdir"
 USER 65534:65534
@@ -248,7 +238,6 @@ ARG OVS_VERSION
 ARG OVS_COMMIT
 ARG UBUNTU_VERSION
 ARG APT_SNAPSHOT
-ARG TARGET_KERNEL
 ARG REPOSITORY_SOURCE
 ARG REPOSITORY_REVISION
 COPY --chmod=0755 scripts/runtime/policy-rc.d /usr/sbin/policy-rc.d
@@ -263,8 +252,7 @@ LABEL org.opencontainers.image.title="Open vSwitch runtime" \
       org.opencontainers.image.revision="${REPOSITORY_REVISION}" \
       io.ovn-builder.ovs-commit="${OVS_COMMIT}" \
       io.ovn-builder.ubuntu="${UBUNTU_VERSION}" \
-      io.ovn-builder.apt-snapshot="${APT_SNAPSHOT}" \
-      io.ovn-builder.target-kernel="${TARGET_KERNEL}"
+      io.ovn-builder.apt-snapshot="${APT_SNAPSHOT}"
 CMD ["/usr/sbin/ovs-vswitchd", "--version"]
 
 FROM snapshot-base AS ovn-runtime
@@ -274,7 +262,6 @@ ARG OVN_VERSION
 ARG OVN_COMMIT
 ARG UBUNTU_VERSION
 ARG APT_SNAPSHOT
-ARG TARGET_KERNEL
 ARG REPOSITORY_SOURCE
 ARG REPOSITORY_REVISION
 COPY --chmod=0755 scripts/runtime/policy-rc.d /usr/sbin/policy-rc.d
@@ -290,6 +277,5 @@ LABEL org.opencontainers.image.title="OVN runtime with Open vSwitch" \
       io.ovn-builder.ovn-commit="${OVN_COMMIT}" \
       io.ovn-builder.ovs-commit="${OVS_COMMIT}" \
       io.ovn-builder.ubuntu="${UBUNTU_VERSION}" \
-      io.ovn-builder.apt-snapshot="${APT_SNAPSHOT}" \
-      io.ovn-builder.target-kernel="${TARGET_KERNEL}"
+      io.ovn-builder.apt-snapshot="${APT_SNAPSHOT}"
 CMD ["/usr/bin/ovn-controller", "--version"]

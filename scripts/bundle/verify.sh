@@ -9,7 +9,7 @@ die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 bundle=$1
 [[ -d $bundle ]] || die "bundle directory not found: $bundle"
 [[ -f $bundle/SHA256SUMS ]] || die "SHA256SUMS is missing"
-[[ -f $bundle/manifest.v1.json ]] || die "manifest.v1.json is missing"
+[[ -f $bundle/manifest.v2.json ]] || die "manifest.v2.json is missing"
 
 if find "$bundle" -type f \( -name '*.buildinfo' -o -name '*.changes' \) -print -quit | grep -q .; then
     die "volatile dpkg provenance is not allowed in a generated-only bundle"
@@ -42,16 +42,15 @@ fi
 (cd "$bundle" && sha256sum --check --strict SHA256SUMS >/dev/null)
 
 jq -e '
-    .schema == "io.ovn-builder.deb-carrier.v1" and
+    .schema == "io.ovn-builder.deb-carrier.v2" and
     .profile == "generated-only" and
     (.product == "ovs" or .product == "ovn") and
     .payload_root == "/workdir" and
-    (.target | keys | sort) ==
-      ["architecture", "codename", "expected_kernel", "kernel_package_version", "kernel_policy", "ubuntu_version"] and
+    (.target | keys | sort) == ["architecture", "codename", "ubuntu_version"] and
     (.packages | type == "array" and length > 0) and
     (.packages == (.packages | sort_by(.file))) and
     (([.packages[].file] | unique | length) == (.packages | length))
-' "$bundle/manifest.v1.json" >/dev/null || die "manifest schema validation failed"
+' "$bundle/manifest.v2.json" >/dev/null || die "manifest schema validation failed"
 
 source_lock=$bundle/metadata/source-lock.json
 [[ -f $source_lock && ! -L $source_lock ]] || die "embedded source lock is missing or unsafe"
@@ -61,7 +60,7 @@ jq -e \
     --slurpfile lock "$source_lock" '
       . as $manifest |
       $lock[0] as $release |
-      $release.schema == "io.ovn-builder.release-lock.v1" and
+      $release.schema == "io.ovn-builder.release-lock.v2" and
       $manifest.build.release_lock_sha256 == $source_lock_sha256 and
       $manifest.build.source_date_epoch == $release.source_date_epoch and
       $manifest.build.apt_snapshot == $release.apt_snapshot and
@@ -77,9 +76,6 @@ jq -e \
       $manifest.source.ovn.build_ovs_commit == $release.sources.ovn.build_ovs_commit and
       $manifest.target.codename == $release.ubuntu[$manifest.target.ubuntu_version].codename and
       $manifest.build.base_image == $release.ubuntu[$manifest.target.ubuntu_version].base_image and
-      $manifest.target.kernel_policy == $release.ubuntu[$manifest.target.ubuntu_version].kernel.policy and
-      $manifest.target.expected_kernel == $release.ubuntu[$manifest.target.ubuntu_version].kernel.release and
-      $manifest.target.kernel_package_version == $release.ubuntu[$manifest.target.ubuntu_version].kernel.package_version and
       all($manifest.packages[];
         (.architecture == $manifest.target.architecture or .architecture == "all") and
         (.component == "ovs" or .component == "ovn")) and
@@ -89,7 +85,7 @@ jq -e \
          any($manifest.packages[]; .component == "ovs") and
          any($manifest.packages[]; .component == "ovn")
        end)
-    ' "$bundle/manifest.v1.json" >/dev/null \
+    ' "$bundle/manifest.v2.json" >/dev/null \
     || die "manifest and embedded release lock disagree"
 
 : > "$tmp/manifest-debs"
@@ -105,7 +101,7 @@ while IFS= read -r encoded; do
     [[ $(dpkg-deb -f "$path" Version) == $(jq -r '.version' <<< "$item") ]] || die "DEB version mismatch: $file"
     [[ $(dpkg-deb -f "$path" Architecture) == $(jq -r '.architecture' <<< "$item") ]] || die "DEB architecture mismatch: $file"
     printf '%s\n' "$file" >> "$tmp/manifest-debs"
-done < <(jq -r '.packages[] | @base64' "$bundle/manifest.v1.json")
+done < <(jq -r '.packages[] | @base64' "$bundle/manifest.v2.json")
 
 find "$bundle" -maxdepth 1 -type f -name '*.deb' -printf '%f\n' | sort > "$tmp/payload-debs"
 sort "$tmp/manifest-debs" -o "$tmp/manifest-debs"
@@ -119,5 +115,5 @@ while IFS= read -r path; do
 done < <(find "$bundle" -mindepth 1 -type d -print | sort)
 
 printf 'verified %s bundle with %s packages\n' \
-    "$(jq -r '.product' "$bundle/manifest.v1.json")" \
-    "$(jq -r '.packages | length' "$bundle/manifest.v1.json")"
+    "$(jq -r '.product' "$bundle/manifest.v2.json")" \
+    "$(jq -r '.packages | length' "$bundle/manifest.v2.json")"

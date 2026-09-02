@@ -14,8 +14,8 @@ root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 "$root/scripts/bundle/verify.sh" "$ovs_bundle" >/dev/null
 "$root/scripts/bundle/verify.sh" "$ovn_bundle" >/dev/null
 
-ovs_manifest=$ovs_bundle/manifest.v1.json
-ovn_manifest=$ovn_bundle/manifest.v1.json
+ovs_manifest=$ovs_bundle/manifest.v2.json
+ovn_manifest=$ovn_bundle/manifest.v2.json
 
 [[ $(jq -r '.product' "$ovs_manifest") == ovs ]] || die "first bundle is not an OVS bundle"
 [[ $(jq -r '.product' "$ovn_manifest") == ovn ]] || die "second bundle is not an OVN bundle"

@@ -23,15 +23,14 @@ docker load --input "$runtime_tar" >/dev/null
     || die "carrier does not use the unprivileged user"
 [[ $(docker image inspect -f '{{index .Config.Labels "io.ovn-builder.bundle.profile"}}' "$carrier_image") == generated-only ]] \
     || die "carrier profile label is wrong"
-expected_kernel=$(jq -r '.target.expected_kernel' "$bundle/manifest.v1.json")
-[[ $expected_kernel =~ ^[0-9]+\.[0-9]+\.[0-9]+-[0-9]+-generic$ ]] \
-    || die "bundle expected kernel is invalid"
+[[ $(docker image inspect -f '{{index .Config.Labels "io.ovn-builder.bundle.schema"}}' "$carrier_image") == 2 ]] \
+    || die "carrier schema label is wrong"
+expected_ubuntu=$(jq -r '.target.ubuntu_version' "$bundle/manifest.v2.json")
+[[ $expected_ubuntu == 22.04 || $expected_ubuntu == 24.04 ]] \
+    || die "bundle Ubuntu version is invalid"
 for image in "$carrier_image" "$runtime_image"; do
-    [[ $(docker image inspect -f '{{index .Config.Labels "io.ovn-builder.target-kernel"}}' "$image") == "$expected_kernel" ]] \
-        || die "image target-kernel label is wrong: $image"
-    docker image inspect "$image" \
-        | jq -e '((.[0].Config.Labels // {}) | has("io.ovn-builder.tested-kernel") | not)' >/dev/null \
-        || die "image must not claim a tested kernel: $image"
+    [[ $(docker image inspect -f '{{index .Config.Labels "io.ovn-builder.ubuntu"}}' "$image") == "$expected_ubuntu" ]] \
+        || die "image Ubuntu label is wrong: $image"
 done
 if [[ -n ${REPOSITORY_SOURCE:-} ]]; then
     [[ $(docker image inspect -f '{{index .Config.Labels "org.opencontainers.image.source"}}' "$carrier_image") == "$REPOSITORY_SOURCE" ]] \

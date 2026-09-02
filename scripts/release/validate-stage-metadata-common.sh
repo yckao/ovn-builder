@@ -4,26 +4,13 @@ IFS=$'\n\t'
 
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 
-(($# == 3)) || die "usage: validate-stage-metadata-common.sh MODE METADATA_DIR OUTPUT_JSON"
+(($# == 2)) || die "usage: validate-stage-metadata-common.sh METADATA_DIR OUTPUT_JSON"
 
-mode=$1
-metadata_dir=$2
-output_json=$3
-case "$mode" in
-    build-only)
-        kernel_validation=unverified
-        stage_schema=ovn-builder.build-only-stage.v2
-        release_schema=ovn-builder.build-only-release-set.v2
-        stage_prefix=_staging-build-only
-        ;;
-    verified)
-        kernel_validation=verified
-        stage_schema=ovn-builder.release-stage.v2
-        release_schema=ovn-builder.release-set.v2
-        stage_prefix=_staging
-        ;;
-    *) die "MODE must be build-only or verified" ;;
-esac
+metadata_dir=$1
+output_json=$2
+stage_schema=ovn-builder.release-stage.v3
+release_schema=ovn-builder.release-set.v3
+stage_prefix=_staging
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 cd "$root"
@@ -100,12 +87,10 @@ for file in "${metadata_files[@]}"; do
         --arg sha "$RELEASE_SHA" \
         --arg repository "$GITHUB_REPOSITORY" \
         --arg schema "$stage_schema" \
-        --arg kernel_validation "$kernel_validation" \
         --argjson expected_count "$expected_count" '
           (keys | sort) ==
-            ["category", "cell_id", "descriptors", "image_prefix", "kernel_validation", "release_run", "schema"] and
+            ["category", "cell_id", "descriptors", "image_prefix", "release_run", "schema"] and
           .schema == $schema and
-          .kernel_validation == $kernel_validation and
           .category == $category and
           .cell_id == $cell and
           .image_prefix == $prefix and
@@ -180,7 +165,6 @@ tmp_output=$(mktemp "${output_json##*/}.XXXXXX")
 trap 'rm -f -- "$tmp_output"' EXIT
 jq -nS \
     --arg schema "$release_schema" \
-    --arg kernel_validation "$kernel_validation" \
     --arg prefix "$IMAGE_PREFIX" \
     --arg run_id "$RELEASE_RUN_ID" \
     --arg run_attempt "$RELEASE_RUN_ATTEMPT" \
@@ -188,7 +172,6 @@ jq -nS \
     --arg repository "$GITHUB_REPOSITORY" \
     --argjson descriptors "$actual" '{
       schema: $schema,
-      kernel_validation: $kernel_validation,
       image_prefix: $prefix,
       release_run: {
         id: $run_id,
