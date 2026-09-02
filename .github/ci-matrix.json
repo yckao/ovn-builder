@@ -77,24 +77,18 @@
       "builder_image": "local/ovn-builder/builder:ovn26.03.2-ovs3.7.1-r1-ubuntu24.04-amd64"
     }
   ],
-  "kernels": [
+  "package_pairs": [
     {
-      "id": "jammy-6.8.0-52",
+      "id": "u2204",
       "distro": "u2204",
-      "ubuntu": "22.04",
-      "expected_uname": "6.8.0-52-generic",
       "ovs_artifact": "debs-ovs-u2204",
-      "ovn_artifact": "debs-ovn-u2204",
-      "runs_on": "[\"self-hosted\",\"linux\",\"x64\",\"ovn-builder\",\"jammy-k6.8.0-52\"]"
+      "ovn_artifact": "debs-ovn-u2204"
     },
     {
-      "id": "noble-ga-6.8.0-138",
+      "id": "u2404",
       "distro": "u2404",
-      "ubuntu": "24.04",
-      "expected_uname": "6.8.0-138-generic",
       "ovs_artifact": "debs-ovs-u2404",
-      "ovn_artifact": "debs-ovn-u2404",
-      "runs_on": "[\"self-hosted\",\"linux\",\"x64\",\"ovn-builder\",\"noble-k6.8.0-138\"]"
+      "ovn_artifact": "debs-ovn-u2404"
     }
   ]
 }

@@ -1,23 +1,24 @@
 # Air-gapped delivery with a conventional Docker image
 
-Version 1 supports environments that approve Docker images but do not accept
+This release supports environments that approve Docker images but do not accept
 standalone OCI artifacts or arbitrary package archives. The carrier is an
 ordinary Docker image based on the matching, digest-pinned Ubuntu release. Its
 payload is `/workdir`.
 
 The carrier is transport, not an installer and not a daemon image. The separate
 `ovs` and `ovn` runtime images contain installed packages. The optional ORAS
-artifact published by the release workflow is an additional distribution
+artifact published by the release workflow uses type
+`application/vnd.ovn-builder.deb-bundle.v2`; it is an additional distribution
 format and is not used by the procedure in this document.
 
 ## Carrier contract
 
-The v1 carrier has these properties:
+The current carrier has these properties:
 
 - `/workdir` contains the exact canonical bundle exported by the corresponding
   `debs-*` Bake target;
 - `io.ovn-builder.payload.path=/workdir` identifies the payload;
-- `io.ovn-builder.bundle.schema=1` and
+- `io.ovn-builder.bundle.schema=2` and
   `io.ovn-builder.bundle.profile=generated-only` identify its contract;
 - the configured user is `65534:65534`;
 - the image has no declared `VOLUME`, because a volume at `/workdir` would hide
@@ -32,7 +33,7 @@ The payload layout is:
 /workdir/
   *.deb
   SHA256SUMS
-  manifest.v1.json
+  manifest.v2.json
   metadata/
     source-lock.json
     ovs/
@@ -45,7 +46,7 @@ the supported pairing.
 
 ## Image names
 
-The default v1 carrier tags are:
+The default `r1` carrier tags are:
 
 ```text
 local/ovn-builder/ovs-debs:3.7.1-r1-ubuntu22.04-amd64
@@ -58,7 +59,8 @@ The `local/ovn-builder` prefix is configurable with `IMAGE_PREFIX`. The tag is
 descriptive, not a trust root. An approval record should include the full tag,
 the published registry digest when applicable, the image ID after loading, the
 release-lock digest recorded in the bundle manifest, and the checksum of the
-exact transfer archive.
+exact transfer archive. Retain the publication's `release-set.v3.json` with
+those records when it is available.
 
 Registry publication also assigns a revision-less version alias, for example
 `3.7.1-ubuntu24.04-amd64`, to the same digest. That alias may move to a later
@@ -69,7 +71,7 @@ moving alias alone.
 Do not combine package sets for different OVS versions under one tag or in one
 offline APT repository. Do not use `latest` for an approved transfer.
 
-Version 1 also preserves the upstream Debian versions (`3.7.1-1` and
+The `r1` release also preserves the upstream Debian versions (`3.7.1-1` and
 `26.03.2-1`) in both Ubuntu lanes. Jammy and Noble packages can therefore have
 the same filename and dpkg version while containing different target-specific
 bytes and dependencies. Keep the two Ubuntu outputs in separate directories,
@@ -239,7 +241,7 @@ intended mechanism.
 
 ## Generated-only means generated-only
 
-The v1 carrier deliberately includes only project packages and build metadata.
+The carrier deliberately includes only project packages and build metadata.
 Only deterministic build metadata is included; dpkg's per-run `.buildinfo`
 and `.changes` records are outside this reproducible payload because they
 contain or transitively hash a wall-clock build date.
@@ -248,14 +250,13 @@ It does **not** include:
 - every transitive Ubuntu `Pre-Depends` or `Depends` package;
 - APT `Packages`, `Release`, or signature metadata;
 - an Ubuntu mirror or snapshot service;
-- a generic production installer; or
-- proof that the package works with a kernel merely named in its manifest.
+- a generic production installer.
 
 Consequently, copying the DEBs into an isolated machine is not sufficient to
 guarantee installation. The target must already contain the dependencies or
 have access to an approved Ubuntu repository compatible with the target release
 and architecture. Use the package names and exact versions in
-`manifest.v1.json` with the site's normal package-management and change-control
+`manifest.v2.json` with the site's normal package-management and change-control
 process. Do not assume that `dpkg -i *.deb` can resolve dependencies.
 
 The runtime image is independently useful in a Docker-only environment because
@@ -280,7 +281,7 @@ The planned layout is conventional APT repository content under `/workdir`:
     Packages.xz
     Release                # when deterministic release metadata is enabled
     Release.gpg            # when an approved repository key is enabled
-  manifest.v1.json
+  manifest.v2.json
   SHA256SUMS
   metadata/
 ```
@@ -301,38 +302,6 @@ OVS 3.7.1 and a future OVS 4.0 package set must remain in different carrier
 images and repositories. Otherwise APT can choose the numerically higher
 version and bypass the intended OVN/OVS compatibility pairing.
 
-## Kernel validation in an air-gapped environment
-
-The carrier's `io.ovn-builder.target-kernel` label and the manifest's
-`expected_kernel` field describe the intended compatibility target. They are
-static build metadata, not evidence that the kernel was booted, and they do not
-cause that kernel to run inside the carrier. Registry tags describe build
-identity only. The associated release-set metadata records
-`kernel_validation=verified` or `kernel_validation=unverified`; retain that
-metadata and its CI evidence with the pinned digest.
-
-Containers share the Docker host's kernel. Loading `openvswitch`, validating
-its vermagic, and exercising datapath operations therefore require a VM or
-machine booted into the target kernel:
-
-- Ubuntu 22.04: exactly `6.8.0-52-generic` for the v1 compatibility target;
-- Ubuntu 24.04: the GA server kernel locked by this release, currently
-  `6.8.0-138-generic`.
-
-The repository's exact-kernel CI script first compares `uname -r`, then loads
-the distribution `openvswitch` module. It installs OVS DEBs from the standalone
-OVS carrier and only OVN DEBs from the combined OVN carrier, with package
-service autostart temporarily inhibited. The bounded functional test starts
-the systemd-managed OVS, OVN central, and OVN host services; verifies the NB/SB
-databases and `ovn-northd`; registers a chassis; binds a logical port through
-an internal `br-int` interface; and confirms controller-installed flows. It
-then removes the test topology and stops services that were not active before
-the test. Reproduce those semantics on an isolated, single-use test VM before
-promoting a package set. A normal container smoke test is not a substitute.
-The VM must not depend on OVS for its management network; the test requires the
-OVS and OVN services to be inactive at entry and refuses to reuse an existing
-`br-int` or OVN-specific OVS configuration.
-
 ## Validation summary
 
 The release pipeline checks these distinct layers:
@@ -340,11 +309,10 @@ The release pipeline checks these distinct layers:
 | Layer | Identity or check |
 | --- | --- |
 | Source/build inputs | `release-lock.json`, source commits, archive SHA-256, image digests, Ubuntu snapshot |
-| Bundle payload | canonical `manifest.v1.json` plus `SHA256SUMS` and full host verifier |
+| Bundle payload | canonical `manifest.v2.json` plus `SHA256SUMS` and full host verifier |
 | Carrier behavior | labels, non-root user, no volume, read-only/no-network checksum run, stopped-container extraction |
 | Transfer | SHA-256 of the exact `docker save` archive before `docker load` |
 | Runtime image | installed binary version smoke test |
-| Kernel | release-set `kernel_validation` plus the separate VM/self-hosted test on the exact `uname -r` value |
 | Reproducibility | two no-cache builds with byte-for-byte bundle comparison |
 
 Keep all of those records with an air-gap approval. No single tag, checksum, or

@@ -51,9 +51,8 @@ docker run --rm --pull=never --network=none "$OVS_PINNED"
 ```
 
 The digest, rather than either tag, is the authoritative registry identity.
-Record it alongside the tag. A tag does not state whether exact-kernel testing
-was performed; that result is in the corresponding publication release-set
-metadata.
+Record it alongside the tag. The publication's complete digest-to-reference
+mapping is recorded in `release-set.v3.json`.
 
 ## Docker DEB carriers: `ovs-debs` and `ovn-debs`
 
@@ -61,7 +60,8 @@ Use `ovs-debs` when only OVS packages are needed. Use `ovn-debs` when OVN is
 needed; it also contains the matching OVS packages. A carrier's working
 directory and payload location are both `/workdir`. Its default command does
 not install anything: it runs strict verification of `SHA256SUMS` as the
-unprivileged user `65534:65534`.
+unprivileged user `65534:65534`. The `io.ovn-builder.bundle.schema=2` label
+identifies the payload contract.
 
 Pull and verify a carrier:
 
@@ -97,24 +97,27 @@ The copied directory contains:
 ```text
 *.deb
 SHA256SUMS
-manifest.v1.json
+manifest.v2.json
 metadata/
 ```
 
-Install only the packages required for the selected role. The runtime images
-are built with these package sets:
+Install only the packages required for the selected role. The following
+commands reproduce the combined package set used in the runtime images; they
+are not a recommendation to run central and host roles together in production.
+Package installation may start services, so use the site's normal service-start
+controls and change process:
 
 ```bash
 cd extracted/ovn-u2404
 
 # OVS runtime package set
-sudo apt-get install \
+sudo apt-get install --no-install-recommends \
   ./openvswitch-common_*.deb \
   ./openvswitch-switch_*.deb \
   ./python3-openvswitch_*.deb
 
 # Additional packages used by the OVN runtime image
-sudo apt-get install \
+sudo apt-get install --no-install-recommends \
   ./ovn-common_*.deb \
   ./ovn-host_*.deb \
   ./ovn-central_*.deb
@@ -160,8 +163,13 @@ docker run --rm --pull=never --network=none \
 docker run --rm --pull=never --network=none \
   --read-only --cap-drop=ALL --security-opt=no-new-privileges \
   "$OVN_RUNTIME" /usr/bin/ovn-nbctl --version
-docker run --rm -it --pull=never --entrypoint /bin/bash "$OVN_RUNTIME"
+docker run --rm -it --pull=never --network=none \
+  --cap-drop=ALL --security-opt=no-new-privileges \
+  --entrypoint /bin/bash "$OVN_RUNTIME"
 ```
+
+The runtime images have no configured `USER`, so commands run as root unless
+the caller supplies `--user`.
 
 For a normal host installation, extract the matching carrier and install its
 DEBs through the host's approved package-management workflow. Use these
@@ -170,17 +178,10 @@ service configuration and lifecycle.
 
 Running `ovs-vswitchd`, `ovsdb-server`, `ovn-controller`, or `ovn-northd` as a
 service additionally requires role-specific databases, state directories,
-sockets, configuration and networking. OVS kernel-datapath use also depends on
-the host kernel and normally requires carefully selected capabilities and host
-resources. Containers share the host kernel: the kernel named in an image
-label is a build/test target, not a kernel bundled in the image. Do not turn a
-version command into a privileged daemon by blindly adding `--privileged`;
-define the required mounts, devices and least-privilege capabilities in the
-deployment that owns those services.
-
-The locked target kernels for this packaging release are
-`6.8.0-52-generic` on Ubuntu 22.04 and `6.8.0-138-generic` on Ubuntu 24.04.
-Check the publication release-set before relying on exact-kernel validation.
+sockets, configuration, networking, and carefully selected privileges and
+host resources. Do not turn a version command into a privileged daemon by
+blindly adding `--privileged`; define the required mounts, devices, and
+least-privilege capabilities in the deployment that owns those services.
 
 ## Builder image: `builder`
 
@@ -208,7 +209,7 @@ Copy the locked source trees out without running the container:
 
 ```bash
 mkdir -p source
-cid=$(docker container create --pull=never "$BUILDER")
+cid=$(docker container create --pull=never --network=none "$BUILDER")
 docker container cp "$cid:/usr/src/openvswitch" source/openvswitch
 docker container cp "$cid:/usr/src/ovn" source/ovn
 docker container rm "$cid"
@@ -241,7 +242,7 @@ docker run --rm --pull=never --network=none --platform linux/amd64 \
   '
 ```
 
-For the complete canonical bundle with `manifest.v1.json` and `SHA256SUMS`,
+For the complete canonical bundle with `manifest.v2.json` and `SHA256SUMS`,
 use the repository's Bake target instead of calling a package helper directly:
 
 ```bash
@@ -255,8 +256,10 @@ The alternatives are `debs-ovs-u2404`, `debs-ovn-u2204`, and
 ## ORAS package artifacts: `ovs-debs-oci` and `ovn-debs-oci`
 
 These repositories contain the same canonical bundle files as the Docker
-carriers, but as OCI artifacts. They are not runnable Docker images. Resolve
-the tag, record its digest, and pull by that digest into an empty directory:
+carriers, but as OCI artifacts with type
+`application/vnd.ovn-builder.deb-bundle.v2`. They are not runnable Docker
+images. Resolve the tag, record its digest, and pull by that digest into an
+empty directory:
 
 ```bash
 OVN_OCI_REPO="$REGISTRY/ovn-debs-oci"

@@ -4,22 +4,10 @@ IFS=$'\n\t'
 
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 
-(($# == 2)) || die "usage: promote-tag-set-common.sh MODE RELEASE_SET_JSON"
-mode=$1
-release_set=$2
-case "$mode" in
-    build-only)
-        expected_schema=ovn-builder.build-only-release-set.v2
-        expected_validation=unverified
-        stage_prefix=_staging-build-only-
-        ;;
-    verified)
-        expected_schema=ovn-builder.release-set.v2
-        expected_validation=verified
-        stage_prefix=_staging-
-        ;;
-    *) die "MODE must be build-only or verified" ;;
-esac
+(($# == 1)) || die "usage: promote-tag-set-common.sh RELEASE_SET_JSON"
+release_set=$1
+expected_schema=ovn-builder.release-set.v3
+stage_prefix=_staging-
 
 : "${GITHUB_REPOSITORY_OWNER:?GITHUB_REPOSITORY_OWNER is required}"
 [[ -f $release_set ]] || die "release set does not exist: $release_set"
@@ -33,12 +21,10 @@ expected_prefix="ghcr.io/$owner/ovn-builder"
 jq -e \
   --arg prefix "$expected_prefix" \
   --arg schema "$expected_schema" \
-  --arg validation "$expected_validation" \
   --arg stage_prefix "$stage_prefix" '
   . as $root |
-  (keys | sort) == ["descriptors", "image_prefix", "kernel_validation", "release_run", "schema"] and
+  (keys | sort) == ["descriptors", "image_prefix", "release_run", "schema"] and
   .schema == $schema and
-  .kernel_validation == $validation and
   .image_prefix == $prefix and
   (.release_run | keys | sort) == ["attempt", "id", "repository", "sha"] and
   (.release_run.id | test("^[1-9][0-9]*$")) and
@@ -68,7 +54,6 @@ jq -e \
     all(.canonical_refs[];
       (keys | sort) == ["policy", "ref"] and
       (.ref | startswith($prefix + "/")) and
-      ((.ref | contains("kernel-unverified")) | not) and
       ((.ref | endswith($root.release_run.sha)) | not) and
       (.ref | test("^ghcr\\.io/[a-z0-9._/-]+:[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$"))))
 ' "$release_set" >/dev/null || die "invalid publication release set"

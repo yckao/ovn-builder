@@ -18,8 +18,6 @@ die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 : "${TARGET_ARCH:?}"
 : "${APT_SNAPSHOT:?}"
 : "${BASE_IMAGE:?}"
-: "${TARGET_KERNEL:?}"
-: "${KERNEL_PACKAGE_VERSION:?}"
 : "${OVS_VERSION:?}"
 : "${OVS_COMMIT:?}"
 : "${OVN_VERSION:?}"
@@ -38,8 +36,6 @@ jq -e \
     --arg architecture "$TARGET_ARCH" \
     --arg apt_snapshot "$APT_SNAPSHOT" \
     --arg base_image "$BASE_IMAGE" \
-    --arg target_kernel "$TARGET_KERNEL" \
-    --arg kernel_package_version "$KERNEL_PACKAGE_VERSION" \
     --arg ovs_version "$OVS_VERSION" \
     --arg ovs_commit "$OVS_COMMIT" \
     --arg ovn_version "$OVN_VERSION" \
@@ -47,7 +43,7 @@ jq -e \
     --arg ovn_upstream_ovs_gitlink "$OVN_UPSTREAM_OVS_GITLINK" \
     --argjson source_date_epoch "$SOURCE_DATE_EPOCH" \
     --argjson jobs "$JOBS" '
-      .schema == "io.ovn-builder.release-lock.v1" and
+      .schema == "io.ovn-builder.release-lock.v2" and
       .source_date_epoch == $source_date_epoch and
       .build_jobs == $jobs and
       .apt_snapshot == $apt_snapshot and
@@ -62,15 +58,8 @@ jq -e \
       .sources.ovn.upstream_ovs_gitlink == $ovn_upstream_ovs_gitlink and
       .sources.ovn.build_ovs_commit == $ovs_commit and
       .ubuntu[$ubuntu_version].codename == $ubuntu_codename and
-      .ubuntu[$ubuntu_version].base_image == $base_image and
-      .ubuntu[$ubuntu_version].kernel.release == $target_kernel and
-      .ubuntu[$ubuntu_version].kernel.package_version == $kernel_package_version
+      .ubuntu[$ubuntu_version].base_image == $base_image
     ' "$SOURCE_LOCK" >/dev/null || die "build inputs do not match the release lock"
-kernel_policy=$(jq -er \
-    --arg ubuntu_version "$UBUNTU_VERSION" \
-    '.ubuntu[$ubuntu_version].kernel.policy |
-     select(type == "string" and length > 0)' \
-    "$SOURCE_LOCK") || die "release lock has no kernel policy for Ubuntu $UBUNTU_VERSION"
 
 install -d -m 0755 "$BUNDLE_DIR/metadata"
 tmp=$(mktemp -d)
@@ -146,9 +135,6 @@ jq -S -c -s \
     --arg architecture "$TARGET_ARCH" \
     --arg apt_snapshot "$APT_SNAPSHOT" \
     --arg base_image "$BASE_IMAGE" \
-    --arg expected_kernel "$TARGET_KERNEL" \
-    --arg kernel_policy "$kernel_policy" \
-    --arg kernel_package_version "$KERNEL_PACKAGE_VERSION" \
     --arg ovs_version "$OVS_VERSION" \
     --arg ovs_commit "$OVS_COMMIT" \
     --arg ovn_version "$OVN_VERSION" \
@@ -156,9 +142,9 @@ jq -S -c -s \
     --arg ovn_upstream_ovs_gitlink "$OVN_UPSTREAM_OVS_GITLINK" \
     --arg release_lock_sha256 "$release_lock_sha256" \
     --argjson source_date_epoch "$SOURCE_DATE_EPOCH" \
-    '{schema:"io.ovn-builder.deb-carrier.v1",profile:"generated-only",product:$product,payload_root:"/workdir",source:{ovs:{version:$ovs_version,commit:$ovs_commit},ovn:{version:$ovn_version,commit:$ovn_commit,upstream_ovs_gitlink:$ovn_upstream_ovs_gitlink,build_ovs_commit:$ovs_commit}},target:{ubuntu_version:$ubuntu_version,codename:$ubuntu_codename,architecture:$architecture,kernel_policy:$kernel_policy,expected_kernel:$expected_kernel,kernel_package_version:$kernel_package_version},build:{apt_snapshot:$apt_snapshot,base_image:$base_image,source_date_epoch:$source_date_epoch,release_lock_sha256:$release_lock_sha256,dpdk:false,lto:false,debug_symbols:false,metadata_policy:"deterministic-only"},packages:sort_by(.file)}' \
-    "$tmp/packages.jsonl" > "$BUNDLE_DIR/manifest.v1.json"
-printf '\n' >> "$BUNDLE_DIR/manifest.v1.json"
+    '{schema:"io.ovn-builder.deb-carrier.v2",profile:"generated-only",product:$product,payload_root:"/workdir",source:{ovs:{version:$ovs_version,commit:$ovs_commit},ovn:{version:$ovn_version,commit:$ovn_commit,upstream_ovs_gitlink:$ovn_upstream_ovs_gitlink,build_ovs_commit:$ovs_commit}},target:{ubuntu_version:$ubuntu_version,codename:$ubuntu_codename,architecture:$architecture},build:{apt_snapshot:$apt_snapshot,base_image:$base_image,source_date_epoch:$source_date_epoch,release_lock_sha256:$release_lock_sha256,dpdk:false,lto:false,debug_symbols:false,metadata_policy:"deterministic-only"},packages:sort_by(.file)}' \
+    "$tmp/packages.jsonl" > "$BUNDLE_DIR/manifest.v2.json"
+printf '\n' >> "$BUNDLE_DIR/manifest.v2.json"
 
 find "$BUNDLE_DIR" -type d -exec chmod 0755 {} +
 find "$BUNDLE_DIR" -type f -exec chmod 0644 {} +
